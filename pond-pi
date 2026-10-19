@@ -51,48 +51,65 @@ build() {
     python3 "$HERE/scripts/pondpi.py" manifest "$image"
 }
 
+flash_candidates() {
+    # Whole disks that are external or removable media (built-in SD slots report
+    # "Internal" + "Removable"). Fixed internal disks and synthesized APFS
+    # containers are never offered.
+    local d info size name
+    for d in $(diskutil list | sed -n 's#^/dev/\(disk[0-9]*\) .*#\1#p'); do
+        info=$(diskutil info "$d")
+        grep -qE 'Device Location: +External|Removable Media: +Removable' <<<"$info" || continue
+        grep -qE 'Virtual: +Yes' <<<"$info" && ! grep -qE 'Protocol: +Disk Image' <<<"$info" && continue
+        size=$(sed -n 's/^ *Disk Size: *\([0-9.]* [KMGT]B\).*/\1/p' <<<"$info")
+        name=$(sed -n 's/^ *Device \/ Media Name: *//p' <<<"$info")
+        printf '%s\t%s\t%s\n' "$d" "$size" "$name"
+    done
+}
+
 flash() {
     # macOS: pond-pi flash IMAGE.img[.xz] [DISK] [-- customize options]
     [[ $(uname) == Darwin ]] || { echo 'pond-pi flash: macOS only; on Linux use rpi-imager or dd' >&2; exit 1; }
     local image=${1:?usage: pond-pi flash IMAGE [diskN] [-- customize options]}; shift
+    [[ -f $image ]] || { echo "pond-pi: no such image: $image" >&2; exit 1; }
     local disk=
     [[ ${1:-} && $1 != -- ]] && { disk=$1; shift; }
     [[ ${1:-} == -- ]] && shift
     local custom=("$@")
 
-    echo 'External physical disks:'
-    diskutil list external physical | grep -E '^/dev/' || { echo '  none found' >&2; exit 1; }
+    local candidates; candidates=$(flash_candidates)
+    [[ -n $candidates ]] || { echo 'pond-pi: no SD card or external disk found' >&2; exit 1; }
+    echo 'Removable and external disks:'
+    sed 's/^/  /' <<<"$candidates"
     if [[ -z $disk ]]; then read -rp 'Disk to ERASE (e.g. disk4): ' disk; fi
     disk=${disk#/dev/}
-    [[ $disk =~ ^disk[0-9]+$ ]] || { echo "pond-pi: '$disk' is not a whole disk like disk4" >&2; exit 1; }
-    local info; info=$(diskutil info "$disk")
-    grep -qE 'Device Location: +External|Removable Media: +Removable' <<<"$info" &&
-        ! grep -qE 'Internal: +Yes' <<<"$info" || { echo "pond-pi: $disk is internal; refusing" >&2; exit 1; }
-    grep -E 'Device / Media Name|Disk Size' <<<"$info"
-    read -rp "Type $disk again to erase it: " confirm
+    cut -f1 <<<"$candidates" | grep -qx "$disk" ||
+        { echo "pond-pi: $disk is not one of the disks above; refusing" >&2; exit 1; }
+    read -rp "Everything on $disk will be erased. Type $disk again to continue: " confirm
     [[ $confirm == "$disk" ]] || { echo 'Cancelled.'; exit 1; }
 
+    local sudo=; [[ -w /dev/r$disk ]] || sudo=sudo
     diskutil unmountDisk "/dev/$disk" >/dev/null
     echo ">>> writing $image to /dev/r$disk"
     if [[ $image == *.xz ]]; then
-        xz -dc "$image" | sudo dd of="/dev/r$disk" bs=4m status=progress
+        xz -dc "$image" | $sudo dd of="/dev/r$disk" bs=4m status=progress
     else
-        sudo dd if="$image" of="/dev/r$disk" bs=4m status=progress
+        $sudo dd if="$image" of="/dev/r$disk" bs=4m status=progress
     fi
     sync
     # Verify the written bytes against the image (size and sha256 from the build).
     local extract=${image%.xz}; extract=${extract%.img}.img.extract
     if [[ -f $extract ]]; then
+        local size sha got
         read -r size sha < "$extract"
         echo '>>> verifying'
-        local got; got=$(sudo dd if="/dev/r$disk" bs=1m count=$(( size / 1048576 )) status=none | shasum -a 256 | cut -d' ' -f1)
+        got=$($sudo dd if="/dev/r$disk" bs=1m count=$(( size / 1048576 )) status=none | shasum -a 256 | cut -d' ' -f1)
         [[ $got == "$sha" ]] || { echo 'pond-pi: verification FAILED; the card may be faulty' >&2; exit 1; }
         echo 'verified'
     fi
-    diskutil mountDisk "/dev/$disk" >/dev/null 2>&1 || true
     if (( ${#custom[@]} )); then
-        local boot=/Volumes/PONDBOOT
-        for _ in 1 2 3 4 5; do [[ -d $boot ]] && break; sleep 1; done
+        diskutil mount "/dev/${disk}s1" >/dev/null
+        local boot; boot=$(diskutil info "${disk}s1" | sed -n 's/^ *Mount Point: *//p')
+        [[ -d $boot ]] || { echo "pond-pi: could not mount the boot partition of $disk" >&2; exit 1; }
         python3 "$HERE/scripts/pondpi.py" customize "$boot" "${custom[@]}"
     fi
     diskutil eject "/dev/$disk" >/dev/null
