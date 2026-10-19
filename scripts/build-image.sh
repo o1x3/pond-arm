@@ -4,6 +4,8 @@
 #   p2  btrfs "POND_ROOT" Pond's subvolume layout; grows to fill the card on first boot
 # The filesystems are built from directories (mkfs --rootdir, mtools), so no
 # loop devices or mounts are needed.
+#   QEMU_TEST=1  also write out/qemu/: the same rootfs plus ALARM's generic kernel
+#   FROM=fs      reuse the last finished rootfs; only reassemble the images
 set -euo pipefail
 
 P=/p                       # project checkout
@@ -13,7 +15,7 @@ OUT=${OUT:-/p/out}
 VERSION=${VERSION:-$(date -u +%Y.%m.%d)}
 NAME=pond-pi5-$VERSION
 BOOT_MIB=512
-SLACK_MIB=1536             # free space on root before first-boot growth
+SLACK_MIB=256              # unallocated room after root for new btrfs chunks
 
 # Pond's btrfs layout (iso-installer src/backend/model.py SUBVOLUMES).
 SUBVOLUMES=("@:/" "@home:/home" "@root:/root" "@srv:/srv" "@log:/var/log" "@cache:/var/cache"
@@ -22,9 +24,17 @@ SUBVOLUMES=("@:/" "@home:/home" "@root:/root" "@srv:/srv" "@log:/var/log" "@cach
 ESP_TYPE=c12a7328-f81f-11d2-ba4b-00a0c93ec93b
 ROOT_ARM64_TYPE=b921b045-1df0-41c3-af44-4c6f280d3fae
 
-rm -rf "$W"
-mkdir -p "$W/stage/@" "$OUT"
 ROOT=$W/stage/@
+mkdir -p "$OUT"
+
+# FROM=fs reuses a finished rootfs from the previous run (after its checks) and
+# only rebuilds the filesystems and disk image.
+if [[ ${FROM:-} == fs ]]; then
+    [[ -f $W/rootfs.env ]] || { echo 'no finished rootfs to resume from'; exit 1; }
+    source "$W/rootfs.env"
+else
+rm -rf "${W:?}"
+mkdir -p "$W/stage/@"
 
 # --- packages --------------------------------------------------------------
 sed '/^\[pond-pi\]/,$d' /etc/pacman.conf > "$W/pacman.conf"
@@ -45,6 +55,7 @@ echo 'VARIANT_ID=rpi5' >> "$ROOT/etc/os-release"
 echo pond > "$ROOT/etc/hostname"
 echo 'en_US.UTF-8 UTF-8' > "$ROOT/etc/locale.gen"
 printf 'LANG=en_US.UTF-8\n' > "$ROOT/etc/locale.conf"
+echo 'KEYMAP=us' > "$ROOT/etc/vconsole.conf"
 ln -sf /usr/share/zoneinfo/UTC "$ROOT/etc/localtime"
 
 # pacman.conf: ALARM repos with Pond's options; Pond's own x86_64 repo has no
@@ -63,7 +74,7 @@ echo "root=PARTUUID=$ROOT_PARTUUID rootfstype=btrfs rootflags=subvol=@ rw rootwa
     > "$ROOT/boot/cmdline.txt"
 {
     for entry in "${SUBVOLUMES[@]}"; do
-        printf 'UUID=%s  %s  btrfs  rw,relatime,compress=zstd:1,subvol=%s  0 0\n' "$ROOT_UUID" "${entry#*:}" "${entry%%:*}"
+        printf 'UUID=%s  %s  btrfs  rw,noatime,compress=zstd:1,subvol=%s  0 0\n' "$ROOT_UUID" "${entry#*:}" "${entry%%:*}"
     done
     echo 'tmpfs  /tmp  tmpfs  defaults,noatime,mode=1777  0 0'
     echo "PARTUUID=$BOOT_PARTUUID  /boot  vfat  umask=0077  0 2"
@@ -79,54 +90,98 @@ arch-chroot "$ROOT" bash -euo pipefail -c '
 '
 
 # --- make the image generic -------------------------------------------------
-rm -rf "$ROOT/etc/pacman.d/gnupg" "$ROOT/var/cache/pacman/pkg/"* "$ROOT"/etc/ssh/ssh_host_*
+rm -rf "${ROOT:?}/etc/pacman.d/gnupg" "${ROOT:?}"/var/cache/pacman/pkg/* "${ROOT:?}"/etc/ssh/ssh_host_*
 : > "$ROOT/etc/machine-id"
 rm -f "$ROOT/var/lib/dbus/machine-id" "$ROOT/var/lib/systemd/random-seed" "$ROOT/var/lib/systemd/credential.secret"
 find "$ROOT/var/log" -type f -delete
 
-# --- filesystems -----------------------------------------------------------
-mkdir "$W/boot"
-cp -a "$ROOT/boot/." "$W/boot/"
-find "$ROOT/boot" -mindepth 1 -delete
+bash "$P/scripts/check-rootfs.sh" "$ROOT" | tee "$OUT/$NAME.compat.txt"
+[[ ${PIPESTATUS[0]} == 0 ]] || { echo '!!! compatibility check failed'; exit 1; }
+declare -p ROOT_UUID ROOT_PARTUUID BOOT_PARTUUID DISK_UUID BOOT_VOLID > "$W/rootfs.env"
+fi
 
-subvol_args=()
-for entry in "${SUBVOLUMES[@]}"; do
-    sub=${entry%%:*} mount=${entry#*:}
-    if [[ $sub != @ ]]; then
-        mkdir -p "$ROOT$mount" "$W/stage/$sub"
-        cp -a "$ROOT$mount/." "$W/stage/$sub/"
-        find "$ROOT$mount" -mindepth 1 -delete
-        subvol_args+=(--subvol "$sub")
-    fi
-done
-chmod 750 "$ROOT/.snapshots" "$W/stage/@snapshots"
+# --- image assembly --------------------------------------------------------
+# QEMU has no Pi 5 machine and linux-rpi does not boot on `virt`, so the test
+# variant adds ALARM's generic kernel modules (and writes that kernel plus an
+# initramfs to out/qemu). Everything after the kernel is the release rootfs.
+add_qemu_kernel() {
+    local root=$1 kpkg kver
+    mkdir -p "$W/pkg" "$OUT/qemu"
+    pacman -Sw --noconfirm --cachedir "$W/pkg" linux-aarch64 >/dev/null
+    kpkg=$(ls "$W"/pkg/linux-aarch64-[0-9]*.pkg.tar.* | grep -v '\.sig$')
+    bsdtar -xf "$kpkg" -C "$root" usr/lib/modules
+    kver=$(bsdtar -tf "$kpkg" | sed -n 's#^usr/lib/modules/\([0-9][^/]*\)/modules\.order$#\1#p' | head -1)
+    [[ -n $kver ]] || { echo 'cannot find linux-aarch64 module version'; exit 1; }
+    arch-chroot "$root" depmod "$kver"
+    arch-chroot "$root" mkinitcpio -k "$kver" -g /var/tmp/initramfs-qemu.img >/dev/null
+    mv "$root/var/tmp/initramfs-qemu.img" "$OUT/qemu/initramfs.img"
+    bsdtar -xOf "$kpkg" boot/Image > "$OUT/qemu/Image"
+    echo "$ROOT_PARTUUID" > "$OUT/qemu/root-partuuid"
+}
 
-used_mib=$(du -sm --apparent-size "$W/stage" | cut -f1)
-root_mib=$(( used_mib + used_mib / 10 + SLACK_MIB ))
-truncate -s "${root_mib}M" "$W/root.img"
-mkfs.btrfs -q -f -L POND_ROOT -U "$ROOT_UUID" -O ^block-group-tree --compress zstd:1 \
-    --rootdir "$W/stage" --subvol default:@ "${subvol_args[@]}" "$W/root.img"
+clean_scratch() { rm -rf "${W:?}/fs" "${W:?}/boot" "${W:?}/boot.img" "${W:?}/root.img"; }
 
-truncate -s "${BOOT_MIB}M" "$W/boot.img"
-mkfs.fat -F 32 -n PONDBOOT -i "$BOOT_VOLID" "$W/boot.img" >/dev/null
-mcopy -s -i "$W/boot.img" "$W/boot/"* ::/
+assemble() {  # assemble NAME [qemu]
+    local name=$1 variant=${2:-} FS=${W:?}/fs
+    # Work on a copy so the finished rootfs stays intact for FROM=fs reruns.
+    clean_scratch
+    mkdir -p "$FS" "$W/boot"
+    cp -a "$ROOT" "$FS/@"
+    [[ $variant == qemu ]] && add_qemu_kernel "$FS/@"
+    cp -a "$FS/@/boot/." "$W/boot/"
+    find "$FS/@/boot" -mindepth 1 -delete
 
-# --- disk image ------------------------------------------------------------
-IMG=$W/$NAME.img
-truncate -s "$(( 1 + BOOT_MIB + root_mib + 1 ))M" "$IMG"
-sfdisk -q "$IMG" <<EOF
+    local subvol_args=() entry sub mount
+    for entry in "${SUBVOLUMES[@]}"; do
+        sub=${entry%%:*} mount=${entry#*:}
+        if [[ $sub != @ ]]; then
+            mkdir -p "$FS/@$mount" "$FS/$sub"
+            cp -a "$FS/@$mount/." "$FS/$sub/"
+            find "$FS/@$mount" -mindepth 1 -delete
+            subvol_args+=(--subvol "$sub")
+        fi
+    done
+    chmod 750 "$FS/@/.snapshots" "$FS/@snapshots"
+
+    # --shrink sizes the filesystem to its (zstd-compressed) contents; the
+    # allocated chunks keep ~1 GiB free for first boot until it grows to the card.
+    truncate -s 1G "$W/root.img"
+    mkfs.btrfs -q -f -L POND_ROOT -U "$ROOT_UUID" -O ^block-group-tree --compress zstd:1 \
+        --rootdir "$FS" --subvol default:@ "${subvol_args[@]}" --shrink "$W/root.img"
+    local root_bytes; root_bytes=$(stat -c %s "$W/root.img")
+    local root_mib=$(( (root_bytes + 1048575) / 1048576 + SLACK_MIB ))
+
+    truncate -s "${BOOT_MIB}M" "$W/boot.img"
+    mkfs.fat -F 32 -n PONDBOOT -i "$BOOT_VOLID" "$W/boot.img" >/dev/null
+    mcopy -s -i "$W/boot.img" "$W/boot/"* ::/
+
+    local img=$W/$name.img
+    rm -f "$img"
+    truncate -s "$(( 1 + BOOT_MIB + root_mib + 1 ))M" "$img"
+    sfdisk -q "$img" <<EOF
 label: gpt
 label-id: $DISK_UUID
 unit: sectors
 start=2048, size=$(( BOOT_MIB * 2048 )), type=$ESP_TYPE, uuid=$BOOT_PARTUUID, name="PONDBOOT"
 start=$(( (1 + BOOT_MIB) * 2048 )), size=$(( root_mib * 2048 )), type=$ROOT_ARM64_TYPE, uuid=$ROOT_PARTUUID, name="POND_ROOT"
 EOF
-dd if="$W/boot.img" of="$IMG" bs=1M seek=1 conv=notrunc,sparse status=none
-dd if="$W/root.img" of="$IMG" bs=1M seek=$(( 1 + BOOT_MIB )) conv=notrunc,sparse status=none
+    dd if="$W/boot.img" of="$img" bs=1M seek=1 conv=notrunc,sparse status=none
+    dd if="$W/root.img" of="$img" bs=1M seek=$(( 1 + BOOT_MIB )) conv=notrunc,sparse status=none
+    clean_scratch
 
-xz -T0 -6 -k -f "$IMG"
-mv -f "$IMG.xz" "$OUT/"
-(cd "$OUT" && sha256sum "$NAME.img.xz" > "$NAME.img.xz.sha256")
-printf '%s %s\n' "$(stat -c %s "$IMG")" "$(sha256sum "$IMG" | cut -d' ' -f1)" > "$OUT/$NAME.img.extract"
-rm -rf "$W/stage" "$W/boot" "$W/boot.img" "$W/root.img"
-echo ">>> $OUT/$NAME.img.xz (raw image kept at $IMG)"
+    if [[ $variant == qemu ]]; then
+        # The macOS bind mount cannot hold sparse files; qcow2 stays compact.
+        qemu-img convert -f raw -O qcow2 "$img" "$OUT/qemu/$name.qcow2"
+        rm -f "$img"
+        echo ">>> $OUT/qemu/$name.qcow2"
+    else
+        printf '%s %s\n' "$(stat -c %s "$img")" "$(sha256sum "$img" | cut -d' ' -f1)" > "$OUT/$name.img.extract"
+        xz -T0 -6 -c "$img" > "$OUT/$name.img.xz"
+        (cd "$OUT" && sha256sum "$name.img.xz" > "$name.img.xz.sha256")
+        echo ">>> $OUT/$name.img.xz ($(du -h "$OUT/$name.img.xz" | cut -f1)); raw image kept at $img"
+    fi
+}
+
+assemble "$NAME"
+[[ ${QEMU_TEST:-0} == 1 ]] && assemble "$NAME-qemutest" qemu
+echo '>>> done'

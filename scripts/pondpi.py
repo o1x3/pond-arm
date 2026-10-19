@@ -21,7 +21,6 @@ import uuid
 USERNAME = re.compile(r"[a-z_][a-z0-9_-]{0,31}")
 HOSTNAME = re.compile(r"[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?")
 KEY_TYPES = ("ssh-", "ecdsa-", "sk-ssh-", "sk-ecdsa-")
-BUILDER_IMAGE = "alarm:synced"
 
 
 def fail(message):
@@ -152,11 +151,12 @@ def write_to_image(image, files):
             subprocess.run(["mcopy", "-o", "-i", f"{image}@@{offset}", *(str(Path(tmp) / n) for n in names), "::/"],
                            check=True)
         else:
-            # No local mtools: use the builder image, which has them.
-            subprocess.run(["docker", "run", "--rm", "--platform", "linux/arm64",
-                            "-v", f"{image.parent}:/img", "-v", f"{tmp}:/seed:ro", BUILDER_IMAGE,
-                            "mcopy", "-o", "-i", f"/img/{image.name}@@{offset}",
-                            *(f"/seed/{n}" for n in names), "::/"], check=True)
+            # No local mtools (brew install mtools): use a throwaway container.
+            copy = " ".join(f"/seed/{n}" for n in names)
+            subprocess.run(["docker", "run", "--rm", "-v", f"{image.parent}:/img", "-v", f"{tmp}:/seed:ro",
+                            "debian:trixie", "sh", "-c",
+                            "apt-get -qq update >/dev/null && apt-get -qq install -y mtools >/dev/null && "
+                            f"mcopy -o -i '/img/{image.name}@@{offset}' {copy} ::/"], check=True)
 
 
 def customize(args):

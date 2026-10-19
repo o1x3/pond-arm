@@ -40,6 +40,26 @@ if ! grep -q '^\[pond-pi\]' /etc/pacman.conf; then
 fi
 [[ -f $REPO/pond-pi.db ]] || sudo -u builder repo-add -q "$REPO/pond-pi.db.tar.zst"
 
+# Prebuilt 'any' packages (needed by pond-fish-config): verify against Pond's signing key before trusting them.
+# The fingerprint matches /usr/share/pacman/keyrings/pond.gpg in Pond's rootfs.
+POND_KEY=B14C6E33AD2B9746842FFD245E3D63FCAA540F08
+export GNUPGHOME=$(mktemp -d)
+gpg -q --import "$SRC/.github/keys/pond-repository.asc"
+gpg --with-colons --fingerprint | grep -q "^fpr:::::::::$POND_KEY:" || { echo "Pond key fingerprint mismatch"; exit 1; }
+echo "$POND_KEY:6:" | gpg -q --import-ownertrust
+for name in "${PREBUILT_ANY[@]}"; do
+  compgen -G "$REPO/$name-*.pkg.tar.*" >/dev/null && { echo ">>> $name: already present"; continue; }
+  file=$(bsdtar -xOf /w/ponddb/pond.db "$(bsdtar -tf /w/ponddb/pond.db | grep -E "^$name-[^/]+/desc$")" | sed -n '/%FILENAME%/{n;p;}')
+  curl -sSfL -o "$REPO/$file" "$PONDREPO/$file"
+  curl -sSfL -o "$REPO/$file.sig" "$PONDREPO/$file.sig"
+  gpg -q --verify "$REPO/$file.sig" "$REPO/$file"
+  bsdtar -xOf "$REPO/$file" .PKGINFO | grep -qx 'arch = any' || { echo "$name is not arch=any"; exit 1; }
+  rm "$REPO/$file.sig"
+  chown builder: "$REPO/$file"
+  sudo -u builder repo-add -q "$REPO/pond-pi.db.tar.zst" "$REPO/$file"
+done
+rm -rf "$GNUPGHOME"
+
 for pkg in "${PACKAGES[@]}"; do
   name=${pkg##*/}
   if compgen -G "$REPO/$name-[0-9]*.pkg.tar.*" >/dev/null || compgen -G "$REPO/$name-[0-9]*:*.pkg.tar.*" >/dev/null; then
@@ -62,23 +82,4 @@ for pkg in "${PACKAGES[@]}"; do
   done
 done
 
-# Prebuilt 'any' packages: verify against Pond's signing key before trusting them.
-# The fingerprint matches /usr/share/pacman/keyrings/pond.gpg in Pond's rootfs.
-POND_KEY=B14C6E33AD2B9746842FFD245E3D63FCAA540F08
-export GNUPGHOME=$(mktemp -d)
-gpg -q --import "$SRC/.github/keys/pond-repository.asc"
-gpg --with-colons --fingerprint | grep -q "^fpr:::::::::$POND_KEY:" || { echo "Pond key fingerprint mismatch"; exit 1; }
-echo "$POND_KEY:6:" | gpg -q --import-ownertrust
-for name in "${PREBUILT_ANY[@]}"; do
-  compgen -G "$REPO/$name-*.pkg.tar.*" >/dev/null && { echo ">>> $name: already present"; continue; }
-  file=$(bsdtar -xOf /w/ponddb/pond.db "$(bsdtar -tf /w/ponddb/pond.db | grep -E "^$name-[^/]+/desc$")" | sed -n '/%FILENAME%/{n;p;}')
-  curl -sSfL -o "$REPO/$file" "$PONDREPO/$file"
-  curl -sSfL -o "$REPO/$file.sig" "$PONDREPO/$file.sig"
-  gpg -q --verify "$REPO/$file.sig" "$REPO/$file"
-  bsdtar -xOf "$REPO/$file" .PKGINFO | grep -qx 'arch = any' || { echo "$name is not arch=any"; exit 1; }
-  rm "$REPO/$file.sig"
-  chown builder: "$REPO/$file"
-  sudo -u builder repo-add -q "$REPO/pond-pi.db.tar.zst" "$REPO/$file"
-done
-rm -rf "$GNUPGHOME"
 echo ">>> done"; ls "$REPO"

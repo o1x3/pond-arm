@@ -9,6 +9,6 @@ pacman-key --populate archlinuxarm
 pacman -Syu --noconfirm --needed \
   base-devel git arch-install-scripts rust nodejs npm cmake ninja \
   qt6-shadertools qt6-tools wayland-protocols pkgconf catch2 \
-  dosfstools mtools btrfs-progs zstd xz libarchive python-yaml
+  dosfstools mtools btrfs-progs zstd xz libarchive python-yaml qemu-img
 id builder >/dev/null 2>&1 || useradd -m builder
 echo 'builder ALL=(ALL) NOPASSWD: ALL' > /etc/sudoers.d/builder

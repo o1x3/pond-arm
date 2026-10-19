@@ -60,7 +60,6 @@ libheif
 libinput-tools
 libopenraw
 libpwquality
-linux-firmware
 logrotate
 lvm2
 man-db
@@ -134,8 +133,22 @@ xdg-user-dirs
 xdg-utils
 xfsprogs
 xwayland-satellite
-# Raspberry Pi 5 boot and hardware
+# Raspberry Pi 5 boot and hardware (archlinuxarm-keyring: pacstrap does not pull it in)
+archlinuxarm-keyring
 linux-rpi
 firmware-raspberrypi
 raspberrypi-bootloader
 raspberrypi-utils
+# Firmware for USB/PCIe add-ons that work on a Pi; PC GPU and Intel Wi-Fi firmware
+# (~650 MB) is left out: pacman -S linux-firmware-intel etc. if needed.
+linux-firmware-broadcom
+linux-firmware-realtek
+linux-firmware-mediatek
+linux-firmware-atheros
+linux-firmware-ti
+linux-firmware-other
+# Pi 5 GPU Vulkan (v3dv) and camera modules (libcamera, PipeWire camera portal)
+vulkan-broadcom
+libcamera
+libcamera-ipa
+pipewire-libcamera

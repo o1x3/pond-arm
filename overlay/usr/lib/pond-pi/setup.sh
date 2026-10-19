@@ -10,6 +10,8 @@ if getent passwd | awk -F: '$3 >= 1000 && $3 < 60000 { found = 1 } END { exit !f
     exit 0
 fi
 
+# Readable on a 1080p/4K TV: kbd's 32px font instead of the 8x16 default.
+setfont latarcyrheb-sun32 2>/dev/null
 clear
 printf '\n  Welcome to Pond on Raspberry Pi.\n  Create your account to finish setup.\n\n'
 
@@ -51,3 +53,4 @@ fi
 
 done_marker
 printf '\n  Done. Starting Pond...\n'
+setfont 2>/dev/null

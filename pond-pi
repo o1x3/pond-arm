@@ -2,6 +2,7 @@
 # Pond for Raspberry Pi 5: build the image, customize it, make an Imager manifest.
 #   ./pond-pi build              build packages + image into ./out (needs Docker, arm64 host or emulation)
 #   ./pond-pi customize ...      preset user/SSH/Wi-Fi/locale (see ./pond-pi customize --help)
+#   ./pond-pi flash IMG [diskN] [-- customize options]   macOS: write, verify, customize a card
 #   ./pond-pi manifest IMG.xz    Raspberry Pi Imager manifest (rpi-imager --repo FILE)
 set -euo pipefail
 
@@ -10,21 +11,23 @@ SRC=${POND_SRC:-$HERE/.src}
 ALARM_TARBALL=http://os.archlinuxarm.org/os/ArchLinuxARM-rpi-aarch64-latest.tar.gz
 ALARM_KEY=68B3537F39A313B3E574D06777193F152BDBE6A6    # Arch Linux ARM Build System
 REPOS=(amarsbar/pond-pkgbuilds)
+BUILDER=${POND_BUILDER:-pond-builder}    # container name
+VOLUME=${POND_VOLUME:-pond-work}         # case-sensitive scratch volume
 
-builder() { docker exec pond-builder "$@"; }
+builder() { docker exec "$BUILDER" "$@"; }
 
 build() {
     command -v docker >/dev/null || { echo 'pond-pi: Docker is required' >&2; exit 1; }
-    docker volume create pond-work >/dev/null
+    docker volume create "$VOLUME" >/dev/null
 
     if ! docker image inspect alarm:base >/dev/null 2>&1; then
         echo '>>> fetching and verifying the Arch Linux ARM base'
-        docker run --rm -v pond-work:/w debian:trixie bash -euc "
+        docker run --rm -v "$VOLUME":/w debian:trixie bash -euc "
             apt-get -qq update >/dev/null; apt-get -qq install -y curl gnupg ca-certificates >/dev/null
             cd /w; curl -sSfLO $ALARM_TARBALL; curl -sSfLO $ALARM_TARBALL.sig
             gpg -q --keyserver hkps://keyserver.ubuntu.com --recv-keys $ALARM_KEY
             gpg -q --verify ArchLinuxARM-rpi-aarch64-latest.tar.gz.sig ArchLinuxARM-rpi-aarch64-latest.tar.gz"
-        docker run --rm -v pond-work:/w debian:trixie cat /w/ArchLinuxARM-rpi-aarch64-latest.tar.gz |
+        docker run --rm -v "$VOLUME":/w debian:trixie cat /w/ArchLinuxARM-rpi-aarch64-latest.tar.gz |
             docker import --platform linux/arm64 - alarm:base >/dev/null
     fi
 
@@ -34,22 +37,71 @@ build() {
         if [[ -d $dir ]]; then git -C "$dir" pull -q --ff-only; else git clone -q "https://github.com/$repo.git" "$dir"; fi
     done
 
-    if ! docker container inspect pond-builder >/dev/null 2>&1; then
-        docker run -d --name pond-builder --privileged --platform linux/arm64 \
-            -v pond-work:/w -v "$HERE:/p" -v "$SRC:/src:ro" alarm:base sleep infinity >/dev/null
+    if ! docker container inspect "$BUILDER" >/dev/null 2>&1; then
+        docker run -d --name "$BUILDER" --privileged --platform linux/arm64 \
+            -v "$VOLUME":/w -v "$HERE:/p" -v "$SRC:/src:ro" alarm:base sleep infinity >/dev/null
         builder bash /p/scripts/setup-builder.sh
     fi
-    docker start pond-builder >/dev/null
+    docker start "$BUILDER" >/dev/null
 
     builder bash -euc 'mkdir -p /w/ponddb && curl -sSfo /w/ponddb/pond.db https://repo.butterfly.so/x86_64/pond.db'
     builder bash /p/scripts/build-packages.sh
-    builder env VERSION="${VERSION:-}" OUT=/p/out bash /p/scripts/build-image.sh
-    image=$(ls -t "$HERE"/out/pond-pi5-*.img.xz | head -1)
+    builder env VERSION="${VERSION:-}" QEMU_TEST="${QEMU_TEST:-0}" OUT=/p/out bash /p/scripts/build-image.sh
+    image=$(ls -t "$HERE"/out/pond-pi5-*.img.xz | grep -v qemutest | head -1)
     python3 "$HERE/scripts/pondpi.py" manifest "$image"
+}
+
+flash() {
+    # macOS: pond-pi flash IMAGE.img[.xz] [DISK] [-- customize options]
+    [[ $(uname) == Darwin ]] || { echo 'pond-pi flash: macOS only; on Linux use rpi-imager or dd' >&2; exit 1; }
+    local image=${1:?usage: pond-pi flash IMAGE [diskN] [-- customize options]}; shift
+    local disk=
+    [[ ${1:-} && $1 != -- ]] && { disk=$1; shift; }
+    [[ ${1:-} == -- ]] && shift
+    local custom=("$@")
+
+    echo 'External physical disks:'
+    diskutil list external physical | grep -E '^/dev/' || { echo '  none found' >&2; exit 1; }
+    if [[ -z $disk ]]; then read -rp 'Disk to ERASE (e.g. disk4): ' disk; fi
+    disk=${disk#/dev/}
+    [[ $disk =~ ^disk[0-9]+$ ]] || { echo "pond-pi: '$disk' is not a whole disk like disk4" >&2; exit 1; }
+    local info; info=$(diskutil info "$disk")
+    grep -qE 'Device Location: +External|Removable Media: +Removable' <<<"$info" &&
+        ! grep -qE 'Internal: +Yes' <<<"$info" || { echo "pond-pi: $disk is internal; refusing" >&2; exit 1; }
+    grep -E 'Device / Media Name|Disk Size' <<<"$info"
+    read -rp "Type $disk again to erase it: " confirm
+    [[ $confirm == "$disk" ]] || { echo 'Cancelled.'; exit 1; }
+
+    diskutil unmountDisk "/dev/$disk" >/dev/null
+    echo ">>> writing $image to /dev/r$disk"
+    if [[ $image == *.xz ]]; then
+        xz -dc "$image" | sudo dd of="/dev/r$disk" bs=4m status=progress
+    else
+        sudo dd if="$image" of="/dev/r$disk" bs=4m status=progress
+    fi
+    sync
+    # Verify the written bytes against the image (size and sha256 from the build).
+    local extract=${image%.xz}; extract=${extract%.img}.img.extract
+    if [[ -f $extract ]]; then
+        read -r size sha < "$extract"
+        echo '>>> verifying'
+        local got; got=$(sudo dd if="/dev/r$disk" bs=1m count=$(( size / 1048576 )) status=none | shasum -a 256 | cut -d' ' -f1)
+        [[ $got == "$sha" ]] || { echo 'pond-pi: verification FAILED; the card may be faulty' >&2; exit 1; }
+        echo 'verified'
+    fi
+    diskutil mountDisk "/dev/$disk" >/dev/null 2>&1 || true
+    if (( ${#custom[@]} )); then
+        local boot=/Volumes/PONDBOOT
+        for _ in 1 2 3 4 5; do [[ -d $boot ]] && break; sleep 1; done
+        python3 "$HERE/scripts/pondpi.py" customize "$boot" "${custom[@]}"
+    fi
+    diskutil eject "/dev/$disk" >/dev/null
+    echo 'Done. Put the card in the Pi 5 and power on.'
 }
 
 case ${1:-} in
     build) shift; build "$@" ;;
+    flash) shift; flash "$@" ;;
     customize|manifest) exec python3 "$HERE/scripts/pondpi.py" "$@" ;;
-    *) sed -n '2,5p' "$0" | sed 's/^# \{0,1\}//'; exit 2 ;;
+    *) sed -n '2,6p' "$0" | sed 's/^# \{0,1\}//'; exit 2 ;;
 esac
