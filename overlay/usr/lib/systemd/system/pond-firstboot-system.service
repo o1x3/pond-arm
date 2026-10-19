@@ -1,0 +1,17 @@
+[Unit]
+Description=Pond: grow root filesystem and initialise pacman keyring
+ConditionPathExists=!/var/lib/pond/firstboot-system-done
+DefaultDependencies=no
+After=local-fs.target
+Before=sysinit.target shutdown.target
+Conflicts=shutdown.target
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/lib/pond-pi/firstboot-system.sh
+ExecStartPost=/usr/bin/mkdir -p /var/lib/pond
+ExecStartPost=/usr/bin/touch /var/lib/pond/firstboot-system-done
+
+[Install]
+WantedBy=sysinit.target

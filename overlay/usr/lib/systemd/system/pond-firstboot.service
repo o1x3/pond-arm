@@ -1,0 +1,14 @@
+[Unit]
+Description=Pond: apply settings from the boot partition (cloud-init NoCloud seed)
+ConditionPathExistsGlob=|/boot/user-data
+ConditionPathExistsGlob=|/boot/network-config
+After=local-fs.target pond-firstboot-system.service ufw.service
+Before=NetworkManager.service display-manager.service systemd-user-sessions.service pond-setup.service
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/lib/pond-pi/firstboot.py
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,6 @@
+enable pipewire.socket
+enable pipewire-pulse.socket
+enable wireplumber.service
+enable gnome-keyring-daemon.socket
+enable xdg-user-dirs.service
+enable hyprpolkitagent.service

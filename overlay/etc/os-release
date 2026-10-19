@@ -1,0 +1,8 @@
+NAME="Pond"
+PRETTY_NAME="Pond"
+ID=pond
+ID_LIKE=arch
+BUILD_ID=rolling
+ANSI_COLOR="38;2;203;226;91"
+LOGO=pond
+HOME_URL="https://butterfly.so/"

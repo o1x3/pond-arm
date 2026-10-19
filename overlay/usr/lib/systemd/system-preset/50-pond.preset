@@ -1,0 +1,21 @@
+enable NetworkManager.service
+enable ufw.service
+enable bluetooth.service
+enable sddm.service
+enable ananicy-cpp.service
+enable fstrim.timer
+enable systemd-timesyncd.service
+enable nix-daemon.socket
+enable cups.service
+enable cups-browsed.service
+enable pcscd.socket
+enable avahi-daemon.service
+enable systemd-resolved.service
+enable pond-iw-set-regdomain.path
+enable snapper-cleanup.timer
+enable grub-btrfs-snapper.path
+
+disable systemd-networkd.service
+disable systemd-networkd-wait-online.service
+disable systemd-homed.service
+disable systemd-homed-activate.service

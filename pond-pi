@@ -1,0 +1,55 @@
+#!/usr/bin/env bash
+# Pond for Raspberry Pi 5: build the image, customize it, make an Imager manifest.
+#   ./pond-pi build              build packages + image into ./out (needs Docker, arm64 host or emulation)
+#   ./pond-pi customize ...      preset user/SSH/Wi-Fi/locale (see ./pond-pi customize --help)
+#   ./pond-pi manifest IMG.xz    Raspberry Pi Imager manifest (rpi-imager --repo FILE)
+set -euo pipefail
+
+HERE=$(cd "$(dirname "$0")" && pwd)
+SRC=${POND_SRC:-$HERE/.src}
+ALARM_TARBALL=http://os.archlinuxarm.org/os/ArchLinuxARM-rpi-aarch64-latest.tar.gz
+ALARM_KEY=68B3537F39A313B3E574D06777193F152BDBE6A6    # Arch Linux ARM Build System
+REPOS=(amarsbar/pond-pkgbuilds)
+
+builder() { docker exec pond-builder "$@"; }
+
+build() {
+    command -v docker >/dev/null || { echo 'pond-pi: Docker is required' >&2; exit 1; }
+    docker volume create pond-work >/dev/null
+
+    if ! docker image inspect alarm:base >/dev/null 2>&1; then
+        echo '>>> fetching and verifying the Arch Linux ARM base'
+        docker run --rm -v pond-work:/w debian:trixie bash -euc "
+            apt-get -qq update >/dev/null; apt-get -qq install -y curl gnupg ca-certificates >/dev/null
+            cd /w; curl -sSfLO $ALARM_TARBALL; curl -sSfLO $ALARM_TARBALL.sig
+            gpg -q --keyserver hkps://keyserver.ubuntu.com --recv-keys $ALARM_KEY
+            gpg -q --verify ArchLinuxARM-rpi-aarch64-latest.tar.gz.sig ArchLinuxARM-rpi-aarch64-latest.tar.gz"
+        docker run --rm -v pond-work:/w debian:trixie cat /w/ArchLinuxARM-rpi-aarch64-latest.tar.gz |
+            docker import --platform linux/arm64 - alarm:base >/dev/null
+    fi
+
+    mkdir -p "$SRC" "$HERE/out"
+    for repo in "${REPOS[@]}"; do
+        dir=$SRC/${repo#*/}
+        if [[ -d $dir ]]; then git -C "$dir" pull -q --ff-only; else git clone -q "https://github.com/$repo.git" "$dir"; fi
+    done
+
+    if ! docker container inspect pond-builder >/dev/null 2>&1; then
+        docker run -d --name pond-builder --privileged --platform linux/arm64 \
+            -v pond-work:/w -v "$HERE:/p" -v "$SRC:/src:ro" alarm:base sleep infinity >/dev/null
+        builder bash /p/scripts/setup-builder.sh
+    fi
+    docker start pond-builder >/dev/null
+
+    builder bash -euc 'mkdir -p /w/ponddb && curl -sSfo /w/ponddb/pond.db https://repo.butterfly.so/x86_64/pond.db'
+    builder bash /p/scripts/build-packages.sh
+    builder env VERSION="${VERSION:-}" OUT=/p/out bash /p/scripts/build-image.sh
+    image=$(ls -t "$HERE"/out/pond-pi5-*.img.xz | head -1)
+    python3 "$HERE/scripts/pondpi.py" manifest "$image"
+}
+
+case ${1:-} in
+    build) shift; build "$@" ;;
+    customize|manifest) exec python3 "$HERE/scripts/pondpi.py" "$@" ;;
+    *) sed -n '2,5p' "$0" | sed 's/^# \{0,1\}//'; exit 2 ;;
+esac
