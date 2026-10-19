@@ -1,0 +1,66 @@
+#!/bin/bash
+# Health report for Pond on a Raspberry Pi 5: power, thermals, bootloader,
+# GPU, storage and radios. Read-only; safe to run any time.
+set -uo pipefail
+
+ok()   { printf '  \e[32mok\e[0m    %-12s %s\n' "$1" "$2"; }
+warn() { printf '  \e[33mwarn\e[0m  %-12s %s\n' "$1" "$2"; }
+info() { printf '  ·     %-12s %s\n' "$1" "$2"; }
+
+dt() { tr -d '\0' < "/proc/device-tree/$1" 2>/dev/null; }
+dt_u32() { od -An -tu4 --endian=big -N4 "/proc/device-tree/$1" 2>/dev/null | tr -d ' '; }
+
+echo "Pond on $(dt model || echo 'unknown board')"
+info kernel "$(uname -r)"
+
+# Bootloader: kernel 6.18 has stalled at boot on Pi 5 bootloaders from 2025.
+stamp=$(vcgencmd bootloader_version 2>/dev/null | sed -n 's/^timestamp //p')
+if [[ -n $stamp ]]; then
+    date=$(date -ud "@$stamp" +%Y-%m-%d)
+    if (( stamp < $(date -ud 2026-01-01 +%s) )); then
+        warn bootloader "$date: older than 2026; update it (see README, 'bootloader EEPROM')"
+    else
+        ok bootloader "$date"
+    fi
+else
+    info bootloader "unknown (vcgencmd unavailable)"
+fi
+
+# Power: the firmware records the negotiated supply current; below 5 A it
+# limits USB ports to 600 mA in total.
+current=$(dt_u32 chosen/power/max_current)
+if [[ -n $current ]]; then
+    if (( current >= 5000 )); then ok power "${current} mA supply"
+    else warn power "${current} mA supply: USB limited to 600 mA total; use the 27 W (5 A) PSU"; fi
+fi
+throttled=$(vcgencmd get_throttled 2>/dev/null | cut -d= -f2)
+if [[ -n $throttled ]]; then
+    t=$(( throttled ))
+    problems=()
+    (( t & 0x1 ))     && problems+=("under-voltage now")
+    (( t & 0x10000 )) && problems+=("under-voltage since boot")
+    (( t & 0x4 ))     && problems+=("throttled now")
+    (( t & 0x40000 )) && problems+=("throttled since boot")
+    (( t & 0x8 ))     && problems+=("temperature limit now")
+    if (( ${#problems[@]} )); then warn throttling "$(IFS=,; echo "${problems[*]}")"
+    else ok throttling "none ($throttled)"; fi
+fi
+temp=$(vcgencmd measure_temp 2>/dev/null | cut -d= -f2)
+[[ -n $temp ]] && info temperature "$temp"
+
+# GPU: vc4 drives the display, v3d renders; niri needs both.
+drivers=$(for d in /sys/class/drm/card*/device/driver; do basename "$(readlink "$d")"; done 2>/dev/null | sort -u | tr '\n' ' ')
+if [[ $drivers == *vc4* && $drivers == *v3d* && -e /dev/dri/renderD128 ]]; then ok gpu "${drivers% }"
+else warn gpu "drivers: ${drivers:-none} (expected vc4 and v3d)"; fi
+
+# Storage
+root=$(findmnt -no SOURCE / | sed 's/\[.*//')
+info root "$root ($(lsblk -no TRAN,MODEL "/dev/$(lsblk -no PKNAME "$root")" 2>/dev/null | xargs), $(df -h --output=avail / | tail -1 | xargs) free)"
+
+# Radios and network
+if iw dev 2>/dev/null | grep -q Interface; then ok wifi "$(iw reg get 2>/dev/null | sed -n 's/^country \([A-Z0-9]*\).*/country \1/p' | head -1)"
+else warn wifi "no wireless interface (firmware-raspberrypi / brcmfmac)"; fi
+if bluetoothctl show 2>/dev/null | grep -q 'Powered: yes'; then ok bluetooth "powered"
+else info bluetooth "not powered (toggle in Pond's quick settings)"; fi
+nm=$(nmcli -t -f STATE general 2>/dev/null)
+info network "${nm:-NetworkManager not running}"

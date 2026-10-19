@@ -161,6 +161,10 @@ Raspberry Pi OS or the bootloader utility image.
 
 ## Troubleshooting
 
+Start with `pond-pi-doctor` on the Pi. It reports the board, bootloader age, power
+supply and USB current limit, under-voltage and throttling, temperature, GPU drivers,
+root device, Wi-Fi country and Bluetooth state.
+
 - **Black screen after the firmware screen.** Plug the monitor into HDMI 0, the port
   next to the USB-C power. If niri picks the wrong GPU, add this to
   `~/.config/niri/cfg/debug.kdl` (and to the greeter's config):
@@ -181,11 +185,13 @@ overlay/                     Pond's rootfs configuration + Pi first-boot service
   usr/lib/pond-pi/firstboot.py         applies cloud-init seeds (no code execution)
   usr/lib/pond-pi/firstboot-system.sh  grows root, creates pacman keyring
   usr/lib/pond-pi/setup.sh             tty1 account setup when no seed was given
+  usr/bin/pond-pi-doctor               on-device health report
 scripts/build-packages.sh    builds Pond's packages for aarch64 (makepkg)
 scripts/build-image.sh       pacstrap → configure → check → btrfs/FAT → GPT image
 scripts/check-rootfs.sh      compatibility matrix (fails the build on misses)
 scripts/pondpi.py            customize + Imager manifest
 scripts/test-qemu.sh         boots the test image (seeded or blank; GPU=gl for the desktop)
+scripts/selftest.sh          fast checks: customize/first-boot round trip, hostile seeds, manifest schema
 ```
 
 ## Licences

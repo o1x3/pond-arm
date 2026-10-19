@@ -77,6 +77,7 @@ row required "thermal"            "brcmstb/bcm2835 thermal"                     
 row required "watchdog"           "bcm2835-wdt"                                     has_mod bcm2835_wdt
 row required "power button"       "gpio-keys / pwrkey -> logind"                    has_mod gpio_keys
 row required "vcgencmd/pinctrl"   "raspberrypi-utils"                               has_file /usr/bin/vcgencmd /usr/bin/pinctrl
+row required "pond-pi-doctor"     "on-device health report"                         test -x "$ROOT/usr/bin/pond-pi-doctor"
 # Updates
 row required "pacman keyring"     "archlinuxarm-keyring (ALARM package signatures)" has_file /usr/share/pacman/keyrings/archlinuxarm.gpg
 # Memory
