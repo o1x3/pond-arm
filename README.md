@@ -112,7 +112,9 @@ missing. The verified-by column says how far each row has been confirmed:
 | Board | RTC, fan, thermal, watchdog, power button | `rtc-rpi`, `pwm-fan`, `bcm2835-wdt`, `gpio-keys` | build · hardware |
 | Tools | `vcgencmd`, `pinctrl` | `raspberrypi-utils` | build |
 | Memory | zram swap (zstd, size of RAM) | Pond's `pond-system-optimizations` | QEMU |
-| Updates | `pacman -Syu` against Arch Linux ARM | `archlinuxarm-keyring` | QEMU |
+| Firewall | ufw default-deny; SSH opened only when requested | `ufw` on nf_tables | QEMU |
+| Updates | `pacman -Syu` against Arch Linux ARM; snapper pre/post snapshots | `archlinuxarm-keyring`, `snap-pac` | QEMU |
+| Diagnostics | power/USB limit, throttling, bootloader age, GPU, radios | `pond-pi-doctor` | QEMU (degrades cleanly without Pi hardware) |
 
 \* The HEVC decoder needs player support for V4L2 requests. mpv and browsers fall back
 to the CPU, which handles 1080p H.264 and VP9 comfortably.
