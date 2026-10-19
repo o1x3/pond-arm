@@ -183,5 +183,7 @@ EOF
 }
 
 assemble "$NAME"
+# Icon for the Raspberry Pi Imager manifest (Pond's logo).
+rsvg-convert -w 80 -h 80 -f png "$P/overlay/usr/share/icons/hicolor/scalable/apps/pond.svg" -o "$OUT/pond-icon.png"
 [[ ${QEMU_TEST:-0} == 1 ]] && assemble "$NAME-qemutest" qemu
 echo '>>> done'

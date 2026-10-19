@@ -183,6 +183,8 @@ def manifest(args):
         fail(f"missing {extract.name} (written by pond-pi build)")
     extract_size, extract_sha256 = extract.read_text().split()
     download_sha256 = (image.parent / (image.name + ".sha256")).read_text().split()[0]
+    if not (image.parent / "pond-icon.png").is_file():
+        fail("missing pond-icon.png next to the image (written by pond-pi build)")
     entry = {
         "name": "Pond (Raspberry Pi 5)",
         "description": "Pond desktop on Arch Linux ARM",
@@ -191,11 +193,14 @@ def manifest(args):
         "extract_sha256": extract_sha256,
         "image_download_size": image.stat().st_size,
         "image_download_sha256": download_sha256,
+        "icon": (image.parent / "pond-icon.png").as_uri(),
         "release_date": re.search(r"(\d{4})\.(\d{2})\.(\d{2})", image.name).expand(r"\1-\2-\3"),
         "init_format": "cloudinit",
         "devices": ["pi5-64bit"],
     }
-    data = {"imager": {"devices": [{"name": "Raspberry Pi 5", "tags": ["pi5-64bit", "pi5-32bit"],
+    data = {"imager": {"devices": [{"name": "Raspberry Pi 5",
+                                    "description": "Raspberry Pi 5, Raspberry Pi 500 and Compute Module 5",
+                                    "tags": ["pi5-64bit", "pi5-32bit"],
                                     "default": False, "matching_type": "exclusive"}]},
             "os_list": [entry]}
     out = image.parent / "pond-pi5.rpi-imager-manifest"
