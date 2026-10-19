@@ -14,7 +14,7 @@ echo "Pond on $(dt model || echo 'unknown board')"
 info kernel "$(uname -r)"
 
 # Bootloader: kernel 6.18 has stalled at boot on Pi 5 bootloaders from 2025.
-stamp=$(vcgencmd bootloader_version 2>/dev/null | sed -n 's/^timestamp //p')
+stamp=$(vcgencmd bootloader_version 2>/dev/null | sed -n 's/^timestamp \([0-9]*\)$/\1/p')
 if [[ -n $stamp ]]; then
     date=$(date -ud "@$stamp" +%Y-%m-%d)
     if (( stamp < $(date -ud 2026-01-01 +%s) )); then
@@ -33,7 +33,8 @@ if [[ -n $current ]]; then
     if (( current >= 5000 )); then ok power "${current} mA supply"
     else warn power "${current} mA supply: USB limited to 600 mA total; use the 27 W (5 A) PSU"; fi
 fi
-throttled=$(vcgencmd get_throttled 2>/dev/null | cut -d= -f2)
+# vcgencmd prints its own errors on stdout, so only trust well-formed replies.
+throttled=$(vcgencmd get_throttled 2>/dev/null | sed -n 's/^throttled=\(0x[0-9a-fA-F]*\)$/\1/p')
 if [[ -n $throttled ]]; then
     t=$(( throttled ))
     problems=()
@@ -45,7 +46,7 @@ if [[ -n $throttled ]]; then
     if (( ${#problems[@]} )); then warn throttling "$(IFS=,; echo "${problems[*]}")"
     else ok throttling "none ($throttled)"; fi
 fi
-temp=$(vcgencmd measure_temp 2>/dev/null | cut -d= -f2)
+temp=$(vcgencmd measure_temp 2>/dev/null | sed -n "s/^temp=\([0-9.]*'C\)$/\1/p")
 [[ -n $temp ]] && info temperature "$temp"
 
 # GPU: vc4 drives the display, v3d renders; niri needs both.
@@ -55,12 +56,14 @@ else warn gpu "drivers: ${drivers:-none} (expected vc4 and v3d)"; fi
 
 # Storage
 root=$(findmnt -no SOURCE / | sed 's/\[.*//')
-info root "$root ($(lsblk -no TRAN,MODEL "/dev/$(lsblk -no PKNAME "$root")" 2>/dev/null | xargs), $(df -h --output=avail / | tail -1 | xargs) free)"
+info root "$root ($(lsblk -dno TRAN,MODEL "/dev/$(lsblk -no PKNAME "$root")" 2>/dev/null | xargs), $(df -h --output=avail / | tail -1 | xargs) free)"
 
 # Radios and network
 if iw dev 2>/dev/null | grep -q Interface; then ok wifi "$(iw reg get 2>/dev/null | sed -n 's/^country \([A-Z0-9]*\).*/country \1/p' | head -1)"
 else warn wifi "no wireless interface (firmware-raspberrypi / brcmfmac)"; fi
-if bluetoothctl show 2>/dev/null | grep -q 'Powered: yes'; then ok bluetooth "powered"
+# bluetoothctl waits forever when there is no controller.
+if timeout 3 bluetoothctl show 2>/dev/null | grep -q 'Powered: yes'; then ok bluetooth "powered"
+elif [[ -z $(ls /sys/class/bluetooth 2>/dev/null) ]]; then warn bluetooth "no controller (hci_uart / BCM4345C0 firmware)"
 else info bluetooth "not powered (toggle in Pond's quick settings)"; fi
 nm=$(nmcli -t -f STATE general 2>/dev/null)
 info network "${nm:-NetworkManager not running}"

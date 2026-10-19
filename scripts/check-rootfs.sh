@@ -81,7 +81,12 @@ row required "pond-pi-doctor"     "on-device health report"                     
 # Updates
 row required "pacman keyring"     "archlinuxarm-keyring (ALARM package signatures)" has_file /usr/share/pacman/keyrings/archlinuxarm.gpg
 # Memory
-row required "zram swap"          "zram + zram-generator"                           has_file /usr/lib/systemd/system-generators/zram-generator
+zram_ok() { has_mod zram && has_file /usr/lib/systemd/system-generators/zram-generator; }
+row required "zram swap"          "zram + zram-generator"                           zram_ok
+firewall_ok() { has_mod nf_tables && has_mod nft_compat && has_mod xt_conntrack && enabled ufw.service; }
+row required "firewall"           "ufw on nf_tables (nft_compat, conntrack)"        firewall_ok
+containers_ok() { has_mod overlay && has_mod fuse; }
+row required "containers"         "overlayfs + fuse (Flatpak, Nix)"                 containers_ok
 # First boot
 row required "first boot"         "grow + seed + setup units enabled"               bash -c "ls '$ROOT'/etc/systemd/system/*.wants/pond-firstboot-system.service '$ROOT'/etc/systemd/system/*.wants/pond-firstboot.service '$ROOT'/etc/systemd/system/*.wants/pond-setup.service >/dev/null"
 row required "SSH (on demand)"    "openssh present, not enabled by default"        bash -c "test -x '$ROOT/usr/bin/sshd' && ! ls '$ROOT'/etc/systemd/system/*.wants/sshd.service >/dev/null 2>&1"

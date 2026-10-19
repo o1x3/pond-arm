@@ -166,7 +166,8 @@ supply and USB current limit, under-voltage and throttling, temperature, GPU dri
 root device, Wi-Fi country and Bluetooth state.
 
 - **Black screen after the firmware screen.** Plug the monitor into HDMI 0, the port
-  next to the USB-C power. If niri picks the wrong GPU, add this to
+  next to the USB-C power. If the login screen still doesn't appear, press
+  Ctrl+Alt+F2, log in on the text console and run `pond-pi-doctor`. If niri picks the wrong GPU, add this to
   `~/.config/niri/cfg/debug.kdl` (and to the greeter's config):
   `debug { render-drm-device "/dev/dri/renderD128"; }`
 - **A kernel update broke boot.** Put the card in another Linux machine, mount the root
