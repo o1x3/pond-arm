@@ -45,7 +45,10 @@ def set_hostname(name):
         raise ValueError("invalid hostname")
     Path("/etc/hostname").write_text(name + "\n")
     # systemd read /etc/hostname earlier in boot; update the running name too.
-    Path("/proc/sys/kernel/hostname").write_text(name)
+    try:
+        Path("/proc/sys/kernel/hostname").write_text(name)
+    except OSError as error:
+        log.warning("hostname applies from next boot: %s", error)
 
 
 def set_timezone(zone):
@@ -56,14 +59,20 @@ def set_timezone(zone):
 
 
 def set_locale(locale):
-    # Same steps as Pond's installer (system.configure_locale).
+    # Same steps as Pond's installer (system.configure_locale), but glibc lists
+    # UTF-8-default locales without a codeset ("en_IN UTF-8"), so match both forms
+    # and use glibc's spelling.
     supported = {line.split()[0] for line in Path("/usr/share/i18n/SUPPORTED").read_text().splitlines()
                  if line.endswith(" UTF-8")}
-    if locale not in supported:
+    if not isinstance(locale, str):
         raise ValueError("unsupported locale")
-    Path("/etc/locale.gen").write_text(f"{locale} UTF-8\n")
+    base = re.sub(r"\.(?i:utf-?8)", "", locale)
+    name = next((n for n in (locale, base, f"{base}.UTF-8") if n in supported), None)
+    if name is None:
+        raise ValueError("unsupported locale")
+    Path("/etc/locale.gen").write_text(f"{name} UTF-8\n")
     run("locale-gen", stdout=subprocess.DEVNULL)
-    Path("/etc/locale.conf").write_text(f"LANG={locale}\nLC_MESSAGES={locale}\n")
+    Path("/etc/locale.conf").write_text(f"LANG={name}\nLC_MESSAGES={name}\n")
 
 
 def set_keyboard(layout):
@@ -139,7 +148,8 @@ def enable_ssh(password_auth):
                     "KbdInteractiveAuthentication no\nPermitRootLogin no\n")
     # --no-block: sshd waits for network.target, which waits for this unit.
     run("systemctl", "enable", "sshd.service")
-    run("systemctl", "start", "--no-block", "sshd.service")
+    if subprocess.run(["systemctl", "start", "--no-block", "sshd.service"]).returncode:
+        log.warning("sshd starts from next boot")
     # Pond's ufw default drops inbound traffic.
     run("ufw", "allow", "22/tcp", stdout=subprocess.DEVNULL)
 

@@ -40,7 +40,12 @@ mkdir -p "$W/stage/@"
 sed '/^\[pond-pi\]/,$d' /etc/pacman.conf > "$W/pacman.conf"
 printf '\n[pond-pi]\nSigLevel = Optional TrustAll\nServer = file://%s\n' "$REPO" >> "$W/pacman.conf"
 mapfile -t packages < <(grep -vE '^\s*(#|$)' "$P/packages.txt")
-pacstrap -C "$W/pacman.conf" -G -M "$ROOT" "${packages[@]}" python-yaml
+grep -q '^DisableDownloadTimeout' "$W/pacman.conf" || sed -i '/^\[options\]/a DisableDownloadTimeout' "$W/pacman.conf"
+for attempt in 1 2 3; do   # ALARM mirrors stall now and then
+    pacstrap -C "$W/pacman.conf" -G -M "$ROOT" "${packages[@]}" python-yaml && break
+    (( attempt < 3 )) || exit 1
+    echo "pacstrap failed; retrying ($attempt/3)"; sleep 10
+done
 
 # --- Pond configuration ----------------------------------------------------
 # Files land root-owned; existing directories keep their packaged owner and mode.

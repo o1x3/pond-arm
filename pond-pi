@@ -40,9 +40,9 @@ build() {
     if ! docker container inspect "$BUILDER" >/dev/null 2>&1; then
         docker run -d --name "$BUILDER" --privileged --platform linux/arm64 \
             -v "$VOLUME":/w -v "$HERE:/p" -v "$SRC:/src:ro" alarm:base sleep infinity >/dev/null
-        builder bash /p/scripts/setup-builder.sh
     fi
     docker start "$BUILDER" >/dev/null
+    builder bash /p/scripts/setup-builder.sh    # idempotent; also repairs an interrupted setup
 
     builder bash -euc 'mkdir -p /w/ponddb && curl -sSfo /w/ponddb/pond.db https://repo.butterfly.so/x86_64/pond.db'
     builder bash /p/scripts/build-packages.sh
