@@ -50,6 +50,8 @@ done
 # --- Pond configuration ----------------------------------------------------
 # Files land root-owned; existing directories keep their packaged owner and mode.
 tar -C "$P/overlay" --owner=0 --group=0 --exclude=__pycache__ -cf - . | tar -C "$ROOT" --no-overwrite-dir -xf -
+# Pond's fonts and logo, fetched from Butterfly by build/fetch-pond-assets.sh.
+tar -C /w/pond-assets --owner=0 --group=0 -cf - usr | tar -C "$ROOT" --no-overwrite-dir -xf -
 chmod 750 "$ROOT/etc/sudoers.d"
 chmod 440 "$ROOT"/etc/sudoers.d/10-*
 # Pond's useradd defaults name the users group by its GID on Pond (982).
@@ -116,6 +118,7 @@ echo "root=PARTUUID=$ROOT_PARTUUID rootfstype=btrfs rootflags=subvol=@ rw rootwa
 
 arch-chroot "$ROOT" bash -euo pipefail -c '
     locale-gen >/dev/null
+    fc-cache -s >/dev/null    # include the fonts added after pacstrap
     passwd -l root >/dev/null
     systemctl preset-all >/dev/null 2>&1
     systemctl --global preset-all >/dev/null 2>&1
@@ -222,6 +225,6 @@ EOF
 
 assemble "$NAME"
 # Icon for the Raspberry Pi Imager manifest (Pond's logo).
-rsvg-convert -w 80 -h 80 -f png "$P/overlay/usr/share/icons/hicolor/scalable/apps/pond.svg" -o "$OUT/pond-icon.png"
+rsvg-convert -w 80 -h 80 -f png /w/pond-assets/usr/share/icons/hicolor/scalable/apps/pond.svg -o "$OUT/pond-icon.png"
 [[ ${QEMU_TEST:-0} == 1 ]] && assemble "$NAME-qemutest" qemu
 echo '>>> done'

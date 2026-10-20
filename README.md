@@ -59,7 +59,8 @@ cd pond-arm
 ```
 
 The build tool is called `pond-pi` because the Pi is the only board so far. The first build
-takes about 25 minutes. Later builds reuse the compiled packages and take about 15. The
+takes about 30 minutes, including a 2.5 GB download of Pond's root filesystem for its fonts
+and logo. Later builds reuse the compiled packages and take about 15. The
 image is written to `out/pond-pi5-<date>.img.xz`, along with its checksum, a report of the
 hardware checks (`.compat.txt`), and a manifest for Raspberry Pi Imager.
 
@@ -96,7 +97,7 @@ Raspberry Pi 5:
 The code in this repository is released under the [BSD 3-Clause licence](LICENSE).
 
 Pond's packages and configuration belong to Butterfly Interaction Inc. and the other
-authors, under their own licences. The Pond Gramercy fonts in `overlay/usr/share/fonts/`
-are copied from Pond's root filesystem, which ships them without a licence, so this
-repository's licence doesn't cover them. Ask Butterfly before you redistribute the fonts or
-a built image.
+authors, under their own licences. Pond's Gramercy fonts and logo have no licence that
+allows redistribution, so they aren't in this repository. The build downloads them from
+Butterfly, from the same root filesystem and checksum that Pond's installer uses. Built
+images contain them, so ask Butterfly before you share an image.

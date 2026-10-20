@@ -81,6 +81,7 @@ row required "bootloader update"  "rpi5-eeprom (rpi-eeprom-update)"             
 row required "monitor brightness" "ddcutil + i2c group (new users join it)"          bash -c "test -x '$ROOT/usr/bin/ddcutil' && grep -q '^i2c:' '$ROOT/etc/group'"
 row required "first-boot clock"   "timesync clock file at image date"               has_file /var/lib/systemd/timesync/clock
 row required "OS Age"             "fastfetch counts from first boot, not 1970"      bash -c "grep -q firstboot-system-done '$ROOT/etc/xdg/fastfetch/config.jsonc'"
+row required "Pond fonts, logo"   "16 Pond Gramercy fonts + pond.svg (from Butterfly)" bash -c "test \$(find '$ROOT/usr/share/fonts/otf-pond-gramercy' -name '*.otf' | wc -l) = 16 && test -s '$ROOT/usr/share/icons/hicolor/scalable/apps/pond.svg'"
 row required "pond-pi-doctor"     "on-device health report"                         test -x "$ROOT/usr/bin/pond-pi-doctor"
 # Updates
 row required "pacman keyring"     "archlinuxarm-keyring (ALARM package signatures)" has_file /usr/share/pacman/keyrings/archlinuxarm.gpg

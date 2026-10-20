@@ -15,16 +15,20 @@ The build goes through these steps:
 2. Clone [pond-pkgbuilds](https://github.com/amarsbar/pond-pkgbuilds) into `.src/`.
 3. `build/setup-builder.sh` installs the build tools in the container. It's safe to run
    again, and it retries when an Arch Linux ARM mirror stalls.
-4. `build/build-packages.sh` builds Pond's 16 packages for aarch64 with makepkg and puts
+4. `build/fetch-pond-assets.sh` downloads Pond's root filesystem from Butterfly, checks it
+   against the same SHA-256 that Pond's installer uses, and keeps only the Pond Gramercy
+   fonts and `pond.svg`. The download is resumed if it's interrupted and deleted afterwards,
+   and the extracted files are cached in the volume, so this happens once.
+5. `build/build-packages.sh` builds Pond's 16 packages for aarch64 with makepkg and puts
    them in a local package repository. Two fish plugins are architecture-independent, so
    they're downloaded from Pond's own repository instead, after checking their signatures
    against Pond's key. Packages that are already built are skipped.
-5. `build/build-image.sh` installs everything in `build/packages.txt`, copies `overlay/` on
+6. `build/build-image.sh` installs everything in `build/packages.txt`, copies `overlay/` on
    top, configures the system, and runs `build/check-rootfs.sh`. It then removes anything
    that has to be unique per device, such as SSH host keys, and writes the image: a FAT boot
    partition and a btrfs partition holding Pond's subvolumes. No loop devices are needed,
    because `mkfs.btrfs --rootdir` builds the filesystem straight from a directory.
-6. `tools/pondpi.py manifest` writes the Raspberry Pi Imager manifest.
+7. `tools/pondpi.py manifest` writes the Raspberry Pi Imager manifest.
 
 Don't edit `build/build-image.sh` while a build is running. Bash reads a script as it runs
 it, so the running build will pick up the edit partway through and usually fail.
