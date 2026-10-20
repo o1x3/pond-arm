@@ -8,6 +8,7 @@ writes for init_format "cloudinit". The Pi applies them on first boot
 """
 import argparse
 import getpass
+import hashlib
 import json
 from pathlib import Path
 import re
@@ -104,6 +105,10 @@ def build_seed(args):
             password = args.wifi_password if args.wifi_password is not None else prompt_secret("Wi-Fi password")
             if not (8 <= len(password) <= 63 or re.fullmatch(r"[0-9a-fA-F]{64}", password)):
                 fail("Wi-Fi password must be 8-63 characters (or a 64-hex PSK)")
+            if len(password) != 64:
+                # Store the WPA2 key (PBKDF2 of password + SSID) rather than the password:
+                # it still joins this network, but the card no longer reveals a reusable password.
+                password = hashlib.pbkdf2_hmac("sha1", password.encode(), args.wifi_ssid.encode(), 4096, 32).hex()
             point["password"] = password
         if args.wifi_hidden:
             point["hidden"] = True
