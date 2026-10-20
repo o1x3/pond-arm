@@ -1,21 +1,32 @@
 # pond-arm
 
-pond-arm builds [Pond](https://butterfly.so/), Butterfly's Arch-based desktop, for ARM
-computers. The result is an SD card image that you flash and boot. Right now the only
-supported board is the Raspberry Pi 5.
+pond-arm builds [Pond](https://butterfly.so/), Butterfly's Arch-based desktop, for 64-bit
+ARM computers. Butterfly only ships Pond for x86_64 PCs, so this is an unofficial port.
 
-This is an unofficial port. Butterfly only ships Pond for x86_64 PCs, so pond-arm rebuilds
-Pond's own packages for aarch64 from
-[pond-pkgbuilds](https://github.com/amarsbar/pond-pkgbuilds) and installs them on Arch
-Linux ARM. Everything else in Pond's system, from the package list to the btrfs layout, is
-recreated from the root filesystem that Pond's installer downloads.
+The work splits into two layers. The shared layer is Pond itself: its packages rebuilt for
+aarch64 from [pond-pkgbuilds](https://github.com/amarsbar/pond-pkgbuilds), installed on
+Arch Linux ARM, with the rest of Pond's system (package set, configuration, services and
+btrfs layout) recreated from the root filesystem that Pond's installer downloads. Each board
+then adds a kernel, firmware, and a way to boot.
 
-## Status
+The Raspberry Pi 5 is the first board, and the only one supported today.
+
+## Other ARM hardware
+
+Pond's desktop needs an aarch64 machine with a Mesa GPU driver and a kernel with display
+support. Arch Linux ARM's generic kernel and Mesa already cover most current ARM
+GPUs, so for many boards the remaining work is booting: building the image in the layout
+the board's firmware expects. The likely next targets are virtual machines on Apple Silicon,
+the Raspberry Pi 4, and RK3588 boards such as the Orange Pi 5. Apple Silicon Macs and
+Snapdragon laptops are possible but harder. [docs/porting.md](docs/porting.md) covers each
+of them and suggests an order.
+
+## Status on the Raspberry Pi 5
 
 The image runs on a Raspberry Pi 5 with 4 GB of RAM. The login screen comes up 13 seconds
-after the kernel starts, and the desktop renders on the Pi's GPU. Wi-Fi, Bluetooth, HDMI audio,
-updates, Flathub and Nix all work. The [compatibility notes](docs/compatibility.md) say
-what was tested and how.
+after the kernel starts, and the desktop renders on the Pi's GPU. Wi-Fi, Bluetooth, HDMI
+audio, updates, Flathub and Nix all work. The [compatibility notes](docs/compatibility.md)
+say what was tested and how.
 
 Some things don't work, or work differently than they do on a PC:
 
@@ -47,9 +58,10 @@ cd pond-arm
 ./pond-pi build
 ```
 
-The first build takes about 25 minutes. Later builds reuse the compiled packages and take
-about 15. The image is written to `out/pond-pi5-<date>.img.xz`, along with its checksum, a
-report of the hardware checks (`.compat.txt`), and a manifest for Raspberry Pi Imager.
+The build tool is called `pond-pi` because the Pi is the only board so far. The first build
+takes about 25 minutes. Later builds reuse the compiled packages and take about 15. The
+image is written to `out/pond-pi5-<date>.img.xz`, along with its checksum, a report of the
+hardware checks (`.compat.txt`), and a manifest for Raspberry Pi Imager.
 
 ## Flashing
 
@@ -70,10 +82,14 @@ Raspberry Pi Imager works too, and so does any other tool that writes disk image
 
 ## Documentation
 
+* [Porting to other ARM hardware](docs/porting.md)
+* [Development](docs/development.md)
+
+Raspberry Pi 5:
+
 * [Flashing and first boot](docs/flashing.md)
 * [Compatibility](docs/compatibility.md)
 * [Troubleshooting](docs/troubleshooting.md)
-* [Development](docs/development.md)
 
 ## Licence
 
