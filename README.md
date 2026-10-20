@@ -29,8 +29,12 @@ Some things don't work, or work differently than they do on a PC:
 
 ## Requirements
 
-You'll need a Mac with Apple Silicon or an aarch64 Linux machine, Docker, and about 20 GB of
-free disk space. [OrbStack](https://orbstack.dev/) works as the Docker engine on macOS.
+You'll need Docker and about 30 GB of free disk space. The build runs in an arm64 container,
+so it's fastest on a Mac with Apple Silicon or an aarch64 Linux machine. On an x86_64
+machine, Docker has to emulate arm64. Docker Desktop does this out of the box, and on Linux
+you can enable it once with `docker run --privileged --rm tonistiigi/binfmt --install arm64`.
+An emulated build is much slower and hasn't been tested. [OrbStack](https://orbstack.dev/)
+works as the Docker engine on macOS.
 
 The Pi needs a 5 V, 5 A USB-C power supply and a microSD card of at least 16 GB. A laptop
 or phone charger will boot it, but the Pi throttles itself and limits its USB ports.
