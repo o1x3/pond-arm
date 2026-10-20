@@ -44,6 +44,8 @@ printf '%s:%s\n' "$username" "$password" | chpasswd || { userdel -r "$username";
 unset password confirm
 echo "$hostname" > /etc/hostname
 hostname "$hostname"
+# avahi publishes the name it started with; republish $hostname.local.
+systemctl try-restart avahi-daemon.service
 
 read -rp '  Set up Wi-Fi now? [y/N] ' wifi
 if [[ $wifi == [yY]* ]]; then

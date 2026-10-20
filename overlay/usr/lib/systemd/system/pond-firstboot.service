@@ -3,7 +3,7 @@ Description=Pond: apply settings from the boot partition (cloud-init NoCloud see
 ConditionPathExistsGlob=|/boot/user-data
 ConditionPathExistsGlob=|/boot/network-config
 After=local-fs.target pond-firstboot-system.service ufw.service
-Before=NetworkManager.service display-manager.service systemd-user-sessions.service pond-setup.service
+Before=NetworkManager.service avahi-daemon.service display-manager.service systemd-user-sessions.service pond-setup.service
 
 [Service]
 Type=oneshot

@@ -139,6 +139,7 @@ linux-rpi
 firmware-raspberrypi
 raspberrypi-bootloader
 raspberrypi-utils
+nss-mdns
 # Firmware for USB/PCIe add-ons that work on a Pi; PC GPU and Intel Wi-Fi firmware
 # (~650 MB) is left out: pacman -S linux-firmware-intel etc. if needed.
 linux-firmware-broadcom

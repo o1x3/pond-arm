@@ -62,6 +62,8 @@ echo 'en_US.UTF-8 UTF-8' > "$ROOT/etc/locale.gen"
 printf 'LANG=en_US.UTF-8\n' > "$ROOT/etc/locale.conf"
 echo 'KEYMAP=us' > "$ROOT/etc/vconsole.conf"
 ln -sf /usr/share/zoneinfo/UTC "$ROOT/etc/localtime"
+# nss-mdns lets the Pi resolve other machines' .local names now that resolved has mDNS off.
+sed -i 's/^hosts: mymachines resolve/hosts: mymachines mdns_minimal [NOTFOUND=return] resolve/' "$ROOT/etc/nsswitch.conf"
 
 # pacman.conf: ALARM repos with Pond's options; Pond's own x86_64 repo has no
 # aarch64 builds, so Pond packages update only by rebuilding this image.

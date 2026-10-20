@@ -80,6 +80,9 @@ row required "vcgencmd/pinctrl"   "raspberrypi-utils"                           
 row required "pond-pi-doctor"     "on-device health report"                         test -x "$ROOT/usr/bin/pond-pi-doctor"
 # Updates
 row required "pacman keyring"     "archlinuxarm-keyring (ALARM package signatures)" has_file /usr/share/pacman/keyrings/archlinuxarm.gpg
+# Local network
+mdns_ok() { enabled avahi-daemon.service && has_file /usr/lib/libnss_mdns_minimal.so.2 && grep -q '^hosts:.*mdns_minimal' "$ROOT/etc/nsswitch.conf" && grep -q '^MulticastDNS=no' "$ROOT/etc/systemd/resolved.conf.d/50-pond-pi.conf"; }
+row required "hostname.local"     "avahi publishes it; nss-mdns; resolved mDNS off"   mdns_ok
 # Memory
 zram_ok() { has_mod zram && has_file /usr/lib/systemd/system-generators/zram-generator; }
 row required "zram swap"          "zram + zram-generator"                           zram_ok
