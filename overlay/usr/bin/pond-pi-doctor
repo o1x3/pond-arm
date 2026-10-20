@@ -18,7 +18,7 @@ stamp=$(vcgencmd bootloader_version 2>/dev/null | sed -n 's/^timestamp \([0-9]*\
 if [[ -n $stamp ]]; then
     date=$(date -ud "@$stamp" +%Y-%m-%d)
     if (( stamp < $(date -ud 2026-01-01 +%s) )); then
-        warn bootloader "$date: older than 2026; update it (see README, 'bootloader EEPROM')"
+        warn bootloader "$date: older than 2026; update: sudo rpi-eeprom-update -a && sudo reboot"
     else
         ok bootloader "$date"
     fi

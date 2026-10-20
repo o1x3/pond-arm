@@ -17,7 +17,12 @@ apply_seed() {
     docker run --rm --platform linux/arm64 -v "$1:/boot" -v "$HERE/overlay/usr/lib/pond-pi:/t:ro" alarm:base bash -c '
         sed -i "/^\[options\]/a DisableSandbox" /etc/pacman.conf
         pacman-key --init >/dev/null 2>&1; pacman-key --populate archlinuxarm >/dev/null 2>&1
-        pacman -Sy --noconfirm --needed python-yaml openssh ufw iw >/dev/null 2>&1
+        for try in 1 2 3; do
+            pacman -Sy --noconfirm --needed python-yaml openssh ufw iw i2c-tools >/dev/null 2>&1 && break
+            [[ $try == 3 ]] && { echo "setup=failed"; exit; }
+            sleep 5
+        done
+        echo "setup=ok"
         python3 /t/firstboot.py >/tmp/log 2>&1; echo "exit=$?"
         echo "user=$(getent passwd karthik | cut -d: -f1)"
         echo "groups=$(id -nG karthik 2>/dev/null | tr " " ",")"
@@ -48,8 +53,9 @@ python3 "$HERE/scripts/pondpi.py" customize "$T/boot" --hostname pi-self --user 
     --timezone Asia/Kolkata --locale en_IN.UTF-8 --keyboard us >/dev/null
 state=$(apply_seed "$T/boot"); [[ -n ${DEBUG:-} ]] && echo "$state"
 get() { sed -n "s/^$1=//p" <<<"$state"; }
+[[ $(get setup) == ok ]] || { echo "  could not install test dependencies in the container (mirror down?); rerun"; exit 2; }
 check "applies cleanly"                 '[[ $(get exit) == 0 ]]'
-check "user in wheel/audio/video/input" '[[ $(get groups) == *wheel* && $(get groups) == *video* && $(get groups) == *input* ]]'
+check "user in wheel/video/input/i2c"   '[[ $(get groups) == *wheel* && $(get groups) == *video* && $(get groups) == *input* && $(get groups) == *i2c* ]]'
 check "password stored as crypt hash"   '[[ $(get hash) == "\$6\$" ]]'
 check "authorized_keys 600, user-owned" '[[ $(get keys) == 600:karthik ]]'
 check "SSH keys-only, sshd enabled"     '[[ $(get pwauth) == no && $(get sshd) == enabled ]]'
@@ -75,6 +81,7 @@ cat > "$T/evil/network-config" <<'EOF'
 network: {version: 2, wifis: {wlan0: {regulatory-domain: "XX;rm", access-points: {"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa": {password: "short"}}}}}
 EOF
 state=$(apply_seed "$T/evil")
+[[ $(get setup) == ok ]] || { echo "  could not install test dependencies in the container (mirror down?); rerun"; exit 2; }
 check "nothing executed from user-data" '[[ -z $(get pwned) ]]'
 check "bad values rejected, not applied" '[[ $(get hostname) != *evil* && -z $(get user) && -z $(get country) && -z $(get wifimode) ]]'
 check "each rejection is logged"        '[[ $(grep -c "^log=" <<<"$state") -ge 5 ]]'

@@ -23,7 +23,7 @@ STATE = Path("/var/lib/pond/firstboot-instance")
 USERNAME = re.compile(r"[a-z_][a-z0-9_-]{0,31}")
 HOSTNAME = re.compile(r"[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?")
 CRYPT_HASH = re.compile(r"\$(?:y|gy|7|2[abxy]|5|6)\$[./A-Za-z0-9$,=]+")
-GROUPS = "wheel,audio,video,input"
+GROUPS = "wheel,audio,video,input,i2c"  # i2c: monitor brightness over HDMI DDC, as on Raspberry Pi OS
 
 log = logging.getLogger("pond-firstboot")
 

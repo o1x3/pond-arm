@@ -39,7 +39,7 @@ until [[ $hostname =~ ^[A-Za-z0-9]([A-Za-z0-9-]{0,61}[A-Za-z0-9])?$ ]]; do
     read -rp '  Use up to 63 letters, numbers or dashes: ' hostname
 done
 
-useradd -m -G wheel,audio,video,input "$username" || exit 1
+useradd -m -G wheel,audio,video,input,i2c "$username" || exit 1
 printf '%s:%s\n' "$username" "$password" | chpasswd || { userdel -r "$username"; exit 1; }
 unset password confirm
 echo "$hostname" > /etc/hostname

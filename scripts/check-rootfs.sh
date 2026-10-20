@@ -77,17 +77,23 @@ row required "thermal"            "brcmstb/bcm2835 thermal"                     
 row required "watchdog"           "bcm2835-wdt"                                     has_mod bcm2835_wdt
 row required "power button"       "gpio-keys / pwrkey -> logind"                    has_mod gpio_keys
 row required "vcgencmd/pinctrl"   "raspberrypi-utils"                               has_file /usr/bin/vcgencmd /usr/bin/pinctrl
+row required "bootloader update"  "rpi5-eeprom (rpi-eeprom-update)"                 has_file /usr/bin/rpi-eeprom-update
+row required "monitor brightness" "ddcutil + i2c group (new users join it)"          bash -c "test -x '$ROOT/usr/bin/ddcutil' && grep -q '^i2c:' '$ROOT/etc/group'"
+row required "first-boot clock"   "timesync clock file at image date"               has_file /var/lib/systemd/timesync/clock
+row required "OS Age"             "fastfetch counts from first boot, not 1970"      bash -c "grep -q firstboot-system-done '$ROOT/etc/xdg/fastfetch/config.jsonc'"
 row required "pond-pi-doctor"     "on-device health report"                         test -x "$ROOT/usr/bin/pond-pi-doctor"
 # Updates
 row required "pacman keyring"     "archlinuxarm-keyring (ALARM package signatures)" has_file /usr/share/pacman/keyrings/archlinuxarm.gpg
 # Local network
-mdns_ok() { enabled avahi-daemon.service && has_file /usr/lib/libnss_mdns_minimal.so.2 && grep -q '^hosts:.*mdns_minimal' "$ROOT/etc/nsswitch.conf" && grep -q '^MulticastDNS=no' "$ROOT/etc/systemd/resolved.conf.d/50-pond-pi.conf"; }
-row required "hostname.local"     "avahi publishes it; nss-mdns; resolved mDNS off"   mdns_ok
+mdns_ok() { enabled avahi-daemon.service && has_file /usr/lib/libnss_mdns_minimal.so.2 && grep -q '^hosts:.*mdns_minimal' "$ROOT/etc/nsswitch.conf" && grep -q '^MulticastDNS=no' "$ROOT/etc/systemd/resolved.conf.d/50-pond-pi.conf" \
+    && grep -q -- '-p igmp -j ACCEPT' "$ROOT/etc/ufw/before.rules" && grep -q -- '-p udp --dport 5353 -j ACCEPT' "$ROOT/etc/ufw/before6.rules"; }
+row required "hostname.local"     "avahi + nss-mdns; resolved mDNS off; ufw IGMP + mDNS" mdns_ok
 # Memory
 zram_ok() { has_mod zram && has_file /usr/lib/systemd/system-generators/zram-generator; }
 row required "zram swap"          "zram + zram-generator"                           zram_ok
 firewall_ok() { has_mod nf_tables && has_mod nft_compat && has_mod xt_conntrack && enabled ufw.service; }
 row required "firewall"           "ufw on nf_tables (nft_compat, conntrack)"        firewall_ok
+row required "Nix"                "nix-daemon + /nix/store created at boot"         bash -c "test -x '$ROOT/usr/bin/nix' && grep -q '^d /nix/store 1775 root nixbld' '$ROOT/usr/lib/tmpfiles.d/50-pond-pi-nix.conf'"
 containers_ok() { has_mod overlay && has_mod fuse; }
 row required "containers"         "overlayfs + fuse (Flatpak, Nix)"                 containers_ok
 # First boot

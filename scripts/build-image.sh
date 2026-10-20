@@ -64,6 +64,33 @@ echo 'KEYMAP=us' > "$ROOT/etc/vconsole.conf"
 ln -sf /usr/share/zoneinfo/UTC "$ROOT/etc/localtime"
 # nss-mdns lets the Pi resolve other machines' .local names now that resolved has mDNS off.
 sed -i 's/^hosts: mymachines resolve/hosts: mymachines mdns_minimal [NOTFOUND=return] resolve/' "$ROOT/etc/nsswitch.conf"
+# ufw only admits multicast mDNS. Also admit IGMP, so the router's membership queries
+# are answered and it keeps forwarding mDNS to the Pi, and unicast mDNS (macOS asks the
+# Pi directly once it knows the address). avahi ignores queries from other networks.
+sed -i '/-d 224.0.0.251 --dport 5353 -j ACCEPT/a -A ufw-before-input -p igmp -j ACCEPT\n-A ufw-before-input -p udp --dport 5353 -j ACCEPT' "$ROOT/etc/ufw/before.rules"
+sed -i '/-d ff02::fb --dport 5353 -j ACCEPT/a -A ufw6-before-input -p udp --dport 5353 -j ACCEPT' "$ROOT/etc/ufw/before6.rules"
+# systemd 262 registers a coredump socket that linux-rpi 6.18 lacks; its register unit
+# then logs "Dependency failed" every boot. Crashes are still collected via the pipe.
+ln -sf /dev/null "$ROOT/etc/systemd/system/systemd-coredump-register.service"
+# mkfs.btrfs --rootdir gives every subvolume a 1970 creation time, so Pond's fastfetch
+# "OS Age" (birth time of /) read 20,000+ days. Count from the first-boot marker instead.
+python3 - "$ROOT/etc/xdg/fastfetch/config.jsonc" <<'PY'
+import sys
+from pathlib import Path
+p = Path(sys.argv[1]); s = p.read_text()
+old = '''      "type": "disk",
+      "key": "╭─ OS Age:",
+      "keyColor": "green",
+      "folders": "/",
+      "format": "{days} days"'''
+new = '''      "type": "command",
+      "key": "╭─ OS Age:",
+      "keyColor": "green",
+      "text": "echo $(( ($(date +%s) - $(stat -c %W /var/lib/pond/firstboot-system-done)) / 86400 )) days"'''
+if old not in s:
+    sys.exit("fastfetch config changed upstream; update the OS Age patch in build-image.sh")
+p.write_text(s.replace(old, new))
+PY
 
 # pacman.conf: ALARM repos with Pond's options; Pond's own x86_64 repo has no
 # aarch64 builds, so Pond packages update only by rebuilding this image.
@@ -94,6 +121,10 @@ arch-chroot "$ROOT" bash -euo pipefail -c '
     systemctl --global preset-all >/dev/null 2>&1
     systemctl set-default graphical.target >/dev/null 2>&1
     mkinitcpio -P
+    # The Pi 5 RTC has no battery by default: systemd starts the clock at the mtime of this
+    # file, so first boot (and its logs, snapshots and OS Age) begins at the image date.
+    install -d -o systemd-timesync -g systemd-timesync /var/lib/systemd/timesync
+    install -o systemd-timesync -g systemd-timesync -m 644 /dev/null /var/lib/systemd/timesync/clock
 '
 
 # --- make the image generic -------------------------------------------------
