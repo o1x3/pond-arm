@@ -2,6 +2,7 @@
 # Pond for Raspberry Pi 5: build the image, customize it, make an Imager manifest.
 #   ./pond-pi build              build packages + image into ./out (needs Docker, arm64 host or emulation)
 #   ./pond-pi customize ...      preset user/SSH/Wi-Fi/locale (see ./pond-pi customize --help)
+#   ./pond-pi customize diskN ...   macOS: the same, on an already-flashed card
 #   ./pond-pi flash IMG [diskN] [-- customize options]   macOS: write, verify, customize a card
 #   ./pond-pi manifest IMG.xz    Raspberry Pi Imager manifest (rpi-imager --repo FILE)
 set -euo pipefail
@@ -107,18 +108,38 @@ flash() {
         echo 'verified'
     fi
     if (( ${#custom[@]} )); then
-        diskutil mount "/dev/${disk}s1" >/dev/null
-        local boot; boot=$(diskutil info "${disk}s1" | sed -n 's/^ *Mount Point: *//p')
-        [[ -d $boot ]] || { echo "pond-pi: could not mount the boot partition of $disk" >&2; exit 1; }
-        python3 "$HERE/scripts/pondpi.py" customize "$boot" "${custom[@]}"
+        customize_disk "$disk" "${custom[@]}"
+    else
+        diskutil eject "/dev/$disk" >/dev/null
     fi
-    diskutil eject "/dev/$disk" >/dev/null
     echo 'Done. Put the card in the Pi 5 and power on.'
+}
+
+customize_disk() {
+    # macOS mounts the EFI-typed boot partition of a physical card only as root
+    # (disk images mount as the user), so fall back to sudo for the mount and
+    # the write. Passwords are still prompted for and hashed in this terminal.
+    local disk=$1; shift
+    cut -f1 <<<"$(flash_candidates)" | grep -qx "$disk" ||
+        { echo "pond-pi: $disk is not a removable or external disk; refusing" >&2; exit 1; }
+    local sudo=
+    diskutil mount "/dev/${disk}s1" >/dev/null 2>&1 || { sudo=sudo; sudo diskutil mount "/dev/${disk}s1" >/dev/null; }
+    local boot; boot=$(diskutil info "${disk}s1" | sed -n 's/^ *Mount Point: *//p')
+    [[ -d $boot ]] || { echo "pond-pi: could not mount the boot partition of $disk" >&2; exit 1; }
+    [[ -w $boot ]] || sudo=sudo
+    $sudo env PATH="$PATH" python3 "$HERE/scripts/pondpi.py" customize "$boot" "$@"
+    $sudo diskutil eject "/dev/$disk" >/dev/null
 }
 
 case ${1:-} in
     build) shift; build "$@" ;;
     flash) shift; flash "$@" ;;
-    customize|manifest) exec python3 "$HERE/scripts/pondpi.py" "$@" ;;
-    *) sed -n '2,6p' "$0" | sed 's/^# \{0,1\}//'; exit 2 ;;
+    customize)
+        if [[ $(uname) == Darwin && ${2:-} =~ ^disk[0-9]+$ ]]; then
+            disk=$2; shift 2; customize_disk "$disk" "$@"; echo 'Done. Put the card in the Pi 5 and power on.'
+        else
+            exec python3 "$HERE/scripts/pondpi.py" "$@"
+        fi ;;
+    manifest) exec python3 "$HERE/scripts/pondpi.py" "$@" ;;
+    *) sed -n '2,7p' "$0" | sed 's/^# \{0,1\}//'; exit 2 ;;
 esac

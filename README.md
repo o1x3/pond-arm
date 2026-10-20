@@ -52,8 +52,9 @@ double-click the manifest. Pick *Raspberry Pi 5*, then *Pond*, and use
 cloud-init files that `pond-pi customize` does.
 
 **Any other tool** (dd, Etcher): flash the `.img.xz`. Then either preset it with
-`./pond-pi customize /Volumes/PONDBOOT --user you …` while the card is still mounted, or
-let the first boot ask.
+`./pond-pi customize disk4 --user you …` (macOS; the disk number from `diskutil list`), or
+let the first boot ask. macOS mounts the card's boot partition (an EFI System partition,
+which the Pi 5 boots from) only as root, so this asks for your Mac password.
 
 ### Customize options
 
