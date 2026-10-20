@@ -47,7 +47,7 @@ apply_seed() {
 echo "1. customize -> first boot round trip"
 mkdir -p "$T/boot" && echo "root=PARTUUID=x rw ds=nocloud;i=1" > "$T/boot/cmdline.txt" && touch "$T/boot/config.txt"
 ssh-keygen -q -t ed25519 -N '' -f "$T/key" -C selftest
-python3 "$HERE/scripts/pondpi.py" customize "$T/boot" --hostname pi-self --user karthik \
+python3 "$HERE/tools/pondpi.py" customize "$T/boot" --hostname pi-self --user karthik \
     --password-hash "$(printf 'pw' | openssl passwd -6 -stdin)" --ssh-key "$T/key.pub" \
     --wifi-ssid 'Café;"x' --wifi-password 'p@ss \word1' --wifi-country in \
     --timezone Asia/Kolkata --locale en_IN.UTF-8 --keyboard us >/dev/null

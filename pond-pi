@@ -43,13 +43,13 @@ build() {
             -v "$VOLUME":/w -v "$HERE:/p" -v "$SRC:/src:ro" alarm:base sleep infinity >/dev/null
     fi
     docker start "$BUILDER" >/dev/null
-    builder bash /p/scripts/setup-builder.sh    # idempotent; also repairs an interrupted setup
+    builder bash /p/build/setup-builder.sh    # idempotent; also repairs an interrupted setup
 
     builder bash -euc 'mkdir -p /w/ponddb && curl -sSfo /w/ponddb/pond.db https://repo.butterfly.so/x86_64/pond.db'
-    builder bash /p/scripts/build-packages.sh
-    builder env VERSION="${VERSION:-}" QEMU_TEST="${QEMU_TEST:-0}" OUT=/p/out bash /p/scripts/build-image.sh
+    builder bash /p/build/build-packages.sh
+    builder env VERSION="${VERSION:-}" QEMU_TEST="${QEMU_TEST:-0}" OUT=/p/out bash /p/build/build-image.sh
     image=$(ls -t "$HERE"/out/pond-pi5-*.img.xz | grep -v qemutest | head -1)
-    python3 "$HERE/scripts/pondpi.py" manifest "$image"
+    python3 "$HERE/tools/pondpi.py" manifest "$image"
 }
 
 flash_candidates() {
@@ -127,7 +127,7 @@ customize_disk() {
     local boot; boot=$(diskutil info "${disk}s1" | sed -n 's/^ *Mount Point: *//p')
     [[ -d $boot ]] || { echo "pond-pi: could not mount the boot partition of $disk" >&2; exit 1; }
     [[ -w $boot ]] || sudo=sudo
-    $sudo env PATH="$PATH" python3 "$HERE/scripts/pondpi.py" customize "$boot" "$@"
+    $sudo env PATH="$PATH" python3 "$HERE/tools/pondpi.py" customize "$boot" "$@"
     $sudo diskutil eject "/dev/$disk" >/dev/null
 }
 
@@ -138,8 +138,8 @@ case ${1:-} in
         if [[ $(uname) == Darwin && ${2:-} =~ ^disk[0-9]+$ ]]; then
             disk=$2; shift 2; customize_disk "$disk" "$@"; echo 'Done. Put the card in the Pi 5 and power on.'
         else
-            exec python3 "$HERE/scripts/pondpi.py" "$@"
+            exec python3 "$HERE/tools/pondpi.py" "$@"
         fi ;;
-    manifest) exec python3 "$HERE/scripts/pondpi.py" "$@" ;;
+    manifest) exec python3 "$HERE/tools/pondpi.py" "$@" ;;
     *) sed -n '2,7p' "$0" | sed 's/^# \{0,1\}//'; exit 2 ;;
 esac

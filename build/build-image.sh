@@ -39,7 +39,7 @@ mkdir -p "$W/stage/@"
 # --- packages --------------------------------------------------------------
 sed '/^\[pond-pi\]/,$d' /etc/pacman.conf > "$W/pacman.conf"
 printf '\n[pond-pi]\nSigLevel = Optional TrustAll\nServer = file://%s\n' "$REPO" >> "$W/pacman.conf"
-mapfile -t packages < <(grep -vE '^\s*(#|$)' "$P/packages.txt")
+mapfile -t packages < <(grep -vE '^\s*(#|$)' "$P/build/packages.txt")
 grep -q '^DisableDownloadTimeout' "$W/pacman.conf" || sed -i '/^\[options\]/a DisableDownloadTimeout' "$W/pacman.conf"
 for attempt in 1 2 3; do   # ALARM mirrors stall now and then
     pacstrap -C "$W/pacman.conf" -G -M "$ROOT" "${packages[@]}" python-yaml && break
@@ -133,7 +133,7 @@ rm -rf "${ROOT:?}/etc/pacman.d/gnupg" "${ROOT:?}"/var/cache/pacman/pkg/* "${ROOT
 rm -f "$ROOT/var/lib/dbus/machine-id" "$ROOT/var/lib/systemd/random-seed" "$ROOT/var/lib/systemd/credential.secret"
 find "$ROOT/var/log" -type f -delete
 
-bash "$P/scripts/check-rootfs.sh" "$ROOT" | tee "$OUT/$NAME.compat.txt"
+bash "$P/build/check-rootfs.sh" "$ROOT" | tee "$OUT/$NAME.compat.txt"
 [[ ${PIPESTATUS[0]} == 0 ]] || { echo '!!! compatibility check failed'; exit 1; }
 declare -p ROOT_UUID ROOT_PARTUUID BOOT_PARTUUID DISK_UUID BOOT_VOLID > "$W/rootfs.env"
 fi
