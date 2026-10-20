@@ -67,11 +67,9 @@ which the Pi 5 boots from) only as root, so this asks for your Mac password.
 
 `TARGET` is a raw `.img` or the mounted boot partition. The tool writes `user-data`,
 `network-config` and `meta-data` to the FAT partition (cloud-init NoCloud). The password
-is stored only as a SHA-512 crypt hash. The Wi-Fi password is stored as its derived WPA2
-key (PBKDF2 of password and SSID): it joins that one network but does not reveal a password
-you may reuse elsewhere. The cost: a preset network connects with WPA2, so a WPA3-only
-router needs mixed WPA2/WPA3 mode (most home routers default to it) or setup after boot.
-The Pi deletes all three files after applying them on first boot.
+is stored only as a SHA-512 crypt hash. The Wi-Fi password is stored as given, because
+WPA3 needs the passphrase rather than a derived key. The Pi deletes all three files
+after applying them on first boot.
 
 ## First boot
 
@@ -83,8 +81,6 @@ The Pi deletes all three files after applying them on first boot.
    to `wheel` for sudo), SSH keys, Wi-Fi, country, timezone, locale and keyboard. When SSH is
    requested, sshd is enabled and port 22 is opened in Pond's firewall (ufw denies inbound
    by default). With keys, SSH password login is disabled. Root login is always disabled.
-   The Pi announces itself as `<hostname>.local` (avahi), so `ssh you@pond.local` works
-   from macOS, Linux and Windows without looking up its IP address.
 4. **No user was preset?** A setup screen on the TV asks for a username, password and
    computer name, and offers Wi-Fi setup through `nmtui`.
 5. **The Pond login screen appears.**
@@ -117,7 +113,6 @@ missing. The verified-by column says how far each row has been confirmed:
 | Board | RTC, fan, thermal, watchdog, power button | `rtc-rpi`, `pwm-fan`, `bcm2835-wdt`, `gpio-keys` | build · hardware |
 | Tools | `vcgencmd`, `pinctrl` | `raspberrypi-utils` | build |
 | Memory | zram swap (zstd, size of RAM) | Pond's `pond-system-optimizations` | QEMU |
-| Local network | `<hostname>.local` published; other `.local` names resolve | avahi, nss-mdns (resolved mDNS off) | QEMU |
 | Firewall | ufw default-deny; SSH opened only when requested | `ufw` on nf_tables | QEMU |
 | Updates | `pacman -Syu` against Arch Linux ARM; snapper pre/post snapshots | `archlinuxarm-keyring`, `snap-pac` | QEMU |
 | Diagnostics | power/USB limit, throttling, bootloader age, GPU, radios | `pond-pi-doctor` | QEMU (degrades cleanly without Pi hardware) |

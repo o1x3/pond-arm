@@ -33,7 +33,6 @@ apply_seed() {
         f=$(ls /etc/NetworkManager/system-connections/*.nmconnection 2>/dev/null | head -1)
         echo "wifimode=$(stat -c %a "$f" 2>/dev/null)"
         echo "ssid=$(sed -n "s/^ssid=//p" "$f" 2>/dev/null | tr ";" " " | xargs -n1 2>/dev/null | python3 -c "import sys; print(bytes(int(x) for x in sys.stdin.read().split()).decode())" 2>/dev/null)"
-        echo "psk=$(sed -n "s/^psk=//p" "$f" 2>/dev/null)"
         echo "pwned=$(test -e /tmp/pwned && echo yes)"
         echo "seed_left=$(ls /boot | grep -cE "^(user-data|network-config|meta-data)$")"
         echo "cmdline=$(cat /boot/cmdline.txt)"
@@ -47,7 +46,6 @@ python3 "$HERE/scripts/pondpi.py" customize "$T/boot" --hostname pi-self --user 
     --password-hash "$(printf 'pw' | openssl passwd -6 -stdin)" --ssh-key "$T/key.pub" \
     --wifi-ssid 'Café;"x' --wifi-password 'p@ss \word1' --wifi-country in \
     --timezone Asia/Kolkata --locale en_IN.UTF-8 --keyboard us >/dev/null
-plain_on_card=$(grep -rl 'p@ss' "$T/boot" || true)
 state=$(apply_seed "$T/boot"); [[ -n ${DEBUG:-} ]] && echo "$state"
 get() { sed -n "s/^$1=//p" <<<"$state"; }
 check "applies cleanly"                 '[[ $(get exit) == 0 ]]'
@@ -58,8 +56,6 @@ check "SSH keys-only, sshd enabled"     '[[ $(get pwauth) == no && $(get sshd) =
 check "hostname / timezone / locale"    '[[ $(get hostname) == pi-self && $(get tz) == */Asia/Kolkata && $(get lang) == en_IN ]]'
 check "console keymap"                  '[[ $(get keymap) == us ]]'
 check "Wi-Fi keyfile 600, SSID intact"  '[[ $(get wifimode) == 600 && $(get ssid) == '"'"'Café;"x'"'"' ]]'
-psk=$(python3 -c 'import hashlib; print(hashlib.pbkdf2_hmac("sha1", "p@ss \\word1".encode(), "Café;\"x".encode(), 4096, 32).hex())')
-check "Wi-Fi stored as derived key"     '[[ $(get psk) == "$psk" && -z $plain_on_card ]]'
 check "regulatory domain"               '[[ $(get country) == IN ]]'
 check "seed deleted, ds= stripped"      '[[ $(get seed_left) == 0 && $(get cmdline) != *ds=nocloud* ]]'
 
