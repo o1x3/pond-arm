@@ -1,59 +1,89 @@
 # Development
 
-## How `./pond-pi build` works
+## How the build works
 
-Everything runs in an arm64 Docker container (`pond-builder`, scratch volume `pond-work`),
-so the host only needs Docker. Apple Silicon runs it natively.
+`./pond-pi build` does all of its work inside an arm64 Docker container called
+`pond-builder`, with its scratch files in a Docker volume called `pond-work`. On Apple
+Silicon the container runs natively. The volume is needed because macOS file systems are
+case-insensitive by default, and some packages contain files whose names differ only in
+case.
 
-1. Download the Arch Linux ARM base tarball, verify its signature, import it as `alarm:base`.
+The build goes through these steps:
+
+1. Download the Arch Linux ARM base system, check its signature, and import it into Docker
+   as `alarm:base`.
 2. Clone [pond-pkgbuilds](https://github.com/amarsbar/pond-pkgbuilds) into `.src/`.
-3. `build/setup-builder.sh`: idempotent toolchain setup in the container (retries stalled
-   ALARM mirrors).
-4. `build/build-packages.sh`: build Pond's 16 own packages for aarch64 with makepkg into a
-   local repo; fetch the two `any`-arch fish packages from Pond's x86_64 repo and verify
-   them against Pond's signing key.
-5. `build/build-image.sh`: pacstrap `build/packages.txt`, lay `overlay/` over it, configure
-   (locale, users, presets, initramfs, Pi boot files), make it generic (no keys, no
-   machine-id), run `build/check-rootfs.sh`, then assemble a GPT image: a FAT boot partition
-   and a btrfs root with Pond's 11 subvolumes, built with `mkfs.btrfs --rootdir` (no loop
-   devices needed).
-6. `tools/pondpi.py manifest`: write the Raspberry Pi Imager manifest.
+3. `build/setup-builder.sh` installs the build tools in the container. It's safe to run
+   again, and it retries when an Arch Linux ARM mirror stalls.
+4. `build/build-packages.sh` builds Pond's 16 packages for aarch64 with makepkg and puts
+   them in a local package repository. Two fish plugins are architecture-independent, so
+   they're downloaded from Pond's own repository instead, after checking their signatures
+   against Pond's key. Packages that are already built are skipped.
+5. `build/build-image.sh` installs everything in `build/packages.txt`, copies `overlay/` on
+   top, configures the system, and runs `build/check-rootfs.sh`. It then removes anything
+   that has to be unique per device, such as SSH host keys, and writes the image: a FAT boot
+   partition and a btrfs partition holding Pond's subvolumes. No loop devices are needed,
+   because `mkfs.btrfs --rootdir` builds the filesystem straight from a directory.
+6. `tools/pondpi.py manifest` writes the Raspberry Pi Imager manifest.
 
-Options (environment variables):
+Don't edit `build/build-image.sh` while a build is running. Bash reads a script as it runs
+it, so the running build will pick up the edit partway through and usually fail.
 
-| Variable | Effect |
-|---|---|
-| `VERSION=2026.10.21` | image name suffix (default: today, UTC) |
-| `QEMU_TEST=1` | also write `out/qemu/`: the same rootfs with ALARM's generic kernel, for QEMU |
-| `POND_BUILDER`, `POND_VOLUME` | container and volume names (default `pond-builder`, `pond-work`) |
-| `POND_SRC` | where pond-pkgbuilds is cloned (default `.src/`) |
+## Build options
 
-To reassemble images from the last finished rootfs without rebuilding it:
-`docker exec pond-builder env FROM=fs OUT=/p/out bash /p/build/build-image.sh`.
+These are read from the environment.
 
-Don't edit `build/build-image.sh` while a build is running: bash reads scripts as it runs
-them, so the running build would pick up the edit mid-way.
+* `VERSION` (default: today's date in UTC, such as `2026.10.21`)
+
+  Appended to the image name.
+
+* `QEMU_TEST` (default: `0`)
+
+  Set to `1` to also build a copy of the image for QEMU in `out/qemu/`. It has the same root
+  filesystem with Arch Linux ARM's generic kernel, since QEMU can't emulate a Pi 5.
+
+* `POND_BUILDER`, `POND_VOLUME` (defaults: `pond-builder`, `pond-work`)
+
+  The names of the build container and its volume.
+
+* `POND_SRC` (default: `.src`)
+
+  Where pond-pkgbuilds is cloned.
+
+To rebuild only the image files from the last finished root filesystem, which takes a few
+minutes instead of fifteen:
+
+```sh
+docker exec pond-builder env FROM=fs OUT=/p/out bash /p/build/build-image.sh
+```
 
 ## Tests
 
+`tests/selftest.sh` takes about a minute and needs Docker. It presets a fake boot partition
+with `pond-pi customize`, applies it with the real first-boot script in an Arch Linux ARM
+container, and checks the result. It also feeds the first-boot script hostile input to make
+sure nothing in it gets executed, and validates the Imager manifest against Imager's
+schema.
+
+`tests/test-qemu.sh` boots the QEMU build. It needs `QEMU_TEST=1 ./pond-pi build` first.
+
 ```sh
-tests/selftest.sh                 # ~1 min: customize -> first boot round trip, hostile seeds, manifest schema
-QEMU_TEST=1 ./pond-pi build       # build the QEMU variant
-tests/test-qemu.sh seeded         # boot with a seeded user (tester / pond-test-pw), SSH on 127.0.0.1:2222
-tests/test-qemu.sh blank          # boot without a seed: the tty1 setup screen appears
+tests/test-qemu.sh seeded    # preset user tester / pond-test-pw, SSH on 127.0.0.1:2222
+tests/test-qemu.sh blank     # no preset, so the setup screen appears
 ```
 
-`test-qemu.sh` uses HVF on macOS and KVM on Linux. QEMU's 2D GPU only offers software EGL,
-which niri refuses, so the desktop needs `GPU=gl` (virgl) on a Linux host with an X display
-(for example Xvfb with llvmpipe). `tests/qmp.py` takes screenshots and types into the VM.
+It uses HVF on macOS and KVM on Linux. QEMU's default GPU only offers software rendering,
+which niri won't start on. To see the desktop, run it on a Linux host with an X display and
+`GPU=gl`, which gives the VM a virgl GPU. `tests/qmp.py` can take screenshots of the VM and
+type into it.
 
-## What is Raspberry Pi specific
+## Adding another board
 
-Pond's packages build for any aarch64 machine. The Pi-specific parts, which another board
-would replace:
+Pond's packages are built for aarch64 in general, so most of this repository would carry
+over to another ARM board. These are the parts specific to the Raspberry Pi:
 
-- kernel, firmware and bootloader packages in `build/packages.txt` (`linux-rpi`,
+* the kernel, firmware and bootloader packages in `build/packages.txt` (`linux-rpi`,
   `firmware-raspberrypi`, `raspberrypi-bootloader`, `rpi5-eeprom`, `vulkan-broadcom`)
-- the FAT boot partition contents and `cmdline.txt` written by `build/build-image.sh`
-- the Pi rows in `build/check-rootfs.sh`
-- `overlay/usr/bin/pond-pi-doctor`
+* the boot partition and `cmdline.txt` set up in `build/build-image.sh`
+* the Pi rows in `build/check-rootfs.sh`
+* `overlay/usr/bin/pond-pi-doctor`

@@ -1,67 +1,82 @@
 # pond-arm
 
-[Pond](https://butterfly.so/) (Butterfly's Arch-based niri desktop) for ARM boards, as a
-flashable image, plus the tooling to build it, preset it the way Raspberry Pi Imager does,
-and write it to a card. **Supported today: Raspberry Pi 5.**
+pond-arm builds [Pond](https://butterfly.so/), Butterfly's Arch-based desktop, for ARM
+computers. The result is an SD card image that you flash and boot. Right now the only
+supported board is the Raspberry Pi 5.
 
-This is an unofficial port. Butterfly ships Pond for x86_64 PCs only, as an installer ISO.
-This project rebuilds Pond's own packages for aarch64 from
-[pond-pkgbuilds](https://github.com/amarsbar/pond-pkgbuilds) and reconstructs the rest of
-Pond's root filesystem (package set, configuration, services, btrfs layout) on top of
-Arch Linux ARM, from Pond's published rootfs (`pond-rootfs.tar.zst`, sha256 `1feff559…`).
+This is an unofficial port. Butterfly only ships Pond for x86_64 PCs, so pond-arm rebuilds
+Pond's own packages for aarch64 from
+[pond-pkgbuilds](https://github.com/amarsbar/pond-pkgbuilds) and installs them on Arch
+Linux ARM. Everything else in Pond's system, from the package list to the btrfs layout, is
+recreated from the root filesystem that Pond's installer downloads.
 
-> **Status:** runs on a physical Raspberry Pi 5 (4 GB): 22 s to the login screen, Pond's
-> desktop on the V3D GPU, Wi-Fi, Bluetooth, HDMI audio, updates with snapshots, Flathub and
-> Nix. See [compatibility](docs/compatibility.md) for what has been verified and how.
+## Status
 
-## Quick start
+The image runs on a Raspberry Pi 5 with 4 GB of RAM. The login screen comes up 13 seconds
+after the kernel starts, and the desktop renders on the Pi's GPU. Wi-Fi, Bluetooth, HDMI audio,
+updates, Flathub and Nix all work. The [compatibility notes](docs/compatibility.md) say
+what was tested and how.
 
-Requirements: macOS on Apple Silicon or aarch64 Linux, Docker (OrbStack works), about 20 GB free.
+Some things don't work, or work differently than they do on a PC:
+
+* Apps without a Linux ARM build can't be installed, which rules out Discord, Spotify,
+  Steam, OBS and Zoom among others. About 86% of the apps in Pond's catalogue do install.
+* Butterfly doesn't publish ARM packages, so Pond's own packages only change when you
+  rebuild the image. Everything from Arch Linux ARM updates normally with `pacman -Syu`.
+* There's no snapshot boot menu. Snapshots are still taken before and after every update,
+  but you roll back from a running system.
+* Sleep locks the screen and nothing more, because the Pi 5 can't suspend.
+
+## Requirements
+
+You'll need a Mac with Apple Silicon or an aarch64 Linux machine, Docker, and about 20 GB of
+free disk space. [OrbStack](https://orbstack.dev/) works as the Docker engine on macOS.
+
+The Pi needs a 5 V, 5 A USB-C power supply and a microSD card of at least 16 GB. A laptop
+or phone charger will boot it, but the Pi throttles itself and limits its USB ports.
+
+## Building
 
 ```sh
-./pond-pi build        # ~25 min the first time: packages, rootfs, image -> out/
+git clone https://github.com/o1x3/pond-arm
+cd pond-arm
+./pond-pi build
+```
+
+The first build takes about 25 minutes. Later builds reuse the compiled packages and take
+about 15. The image is written to `out/pond-pi5-<date>.img.xz`, along with its checksum, a
+report of the hardware checks (`.compat.txt`), and a manifest for Raspberry Pi Imager.
+
+## Flashing
+
+On macOS, `pond-pi flash` writes the card, reads it back to verify it, and presets your
+account, SSH key and Wi-Fi:
+
+```sh
 ./pond-pi flash out/pond-pi5-*.img.xz -- \
     --user you --ssh-key ~/.ssh/id_ed25519.pub \
     --wifi-ssid "Home" --wifi-country GB --timezone Europe/London
 ```
 
-`flash` (macOS) writes the card, verifies it against the build's checksum and presets your
-account, SSH key and Wi-Fi. It prompts for passwords, so they never reach your shell history.
-Then boot the Pi with the card and run `ssh you@pond.local`.
+It asks for passwords at a prompt, which keeps them out of your shell history. After the Pi
+boots, connect with `ssh you@pond.local`.
 
-Raspberry Pi Imager works too: `rpi-imager --repo out/pond-pi5.rpi-imager-manifest`.
-[Flashing and first boot](docs/flashing.md) covers every option.
+Raspberry Pi Imager works too, and so does any other tool that writes disk images.
+[Flashing and first boot](docs/flashing.md) covers both, and every preset option.
 
-| Output in `out/` | What |
-|---|---|
-| `pond-pi5-<date>.img.xz` (+ `.sha256`) | the image, about 2 GB (4.4 GB written) |
-| `pond-pi5-<date>.compat.txt` | the compatibility check for this build |
-| `pond-pi5.rpi-imager-manifest` | opens the image in Raspberry Pi Imager with customisation |
+## Documentation
 
-## Docs
-
-- [Flashing and first boot](docs/flashing.md): `flash`, Imager, `customize` options, what first boot does
-- [Compatibility](docs/compatibility.md): hardware matrix, boards, differences from PC Pond, which apps install
-- [Troubleshooting](docs/troubleshooting.md): `pond-pi-doctor`, power, bootloader EEPROM, NVMe, recovery
-- [Development](docs/development.md): how the build works, tests, repository layout
-
-## Repository layout
-
-```
-pond-pi        CLI: build, flash (macOS), customize, manifest
-build/         builder container setup, package build, image build, compatibility check
-overlay/       files laid over Pond's root filesystem (configs, first-boot services, doctor)
-tools/         pondpi.py: cloud-init seed writer and Imager manifest
-tests/         self-tests and the QEMU boot harness
-docs/          documentation
-```
+* [Flashing and first boot](docs/flashing.md)
+* [Compatibility](docs/compatibility.md)
+* [Troubleshooting](docs/troubleshooting.md)
+* [Development](docs/development.md)
 
 ## Licence
 
-This repository's own code is under the [BSD-3-Clause licence](LICENSE).
+The code in this repository is released under the [BSD 3-Clause licence](LICENSE).
 
-Pond's packages and configuration are © Butterfly Interaction Inc. and their authors, under
-their own licences: BSD-3-Clause for pond-interface and the installer, OFL for the bundled
-third-party fonts. The Pond Gramercy fonts in `overlay/usr/share/fonts/` are copied from
-Pond's published rootfs, where they ship without a licence; they are not covered by this
-repository's licence. Check with Butterfly before redistributing the fonts or the image.
+Pond's packages and configuration belong to Butterfly Interaction Inc. and the other
+authors, under their own licences. The Pond Gramercy fonts in `overlay/usr/share/fonts/`
+are copied from Pond's root filesystem, which ships them without a licence, so this
+repository's licence doesn't cover them. Ask Butterfly before you redistribute the fonts or
+a built image.

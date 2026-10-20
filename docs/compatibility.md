@@ -1,81 +1,85 @@
 # Compatibility
 
-## Hardware matrix (Raspberry Pi 5)
+## Raspberry Pi 5
 
-`build/check-rootfs.sh` runs on every build and fails it if any *required* row is missing
-(the result is `out/pond-pi5-<date>.compat.txt`). The verified column says how far each row
-has been confirmed:
+Every build runs `build/check-rootfs.sh`, which checks that the drivers, firmware and
+services for each part of the Pi 5 are in the image. The build fails if a required one is
+missing, and the results are saved next to the image as `.compat.txt`.
 
-- **build**: driver, firmware or files present in the image
-- **QEMU**: observed working in a booted VM running the same root filesystem
-- **Pi 5**: observed working on a physical Pi 5 Model B (4 GB, rev 1.0) with this image
-- **hardware**: not yet observed on a physical Pi 5
+Passing that check only means the files are present. The last column says how each item has
+actually been tested. "Pi 5" means it was seen working on a Pi 5 Model B (4 GB, rev 1.0)
+running this image. "Untested" means it still needs the hardware to confirm.
 
-| Area | Pi 5 component | Provided by | Verified |
-|---|---|---|---|
-| Boot | VC7 firmware, `kernel8.img`, DTBs for Pi 5 rev C1 / D0, Pi 500, CM5 | `raspberrypi-bootloader`, `linux-rpi` 6.18 | Pi 5 (22 s to desktop login) |
-| Root fs | btrfs, Pond's 11-subvolume layout, zstd | `linux-rpi` btrfs + initramfs | Pi 5 |
-| First boot | grow root, keyring, settings seed, setup screen | `pond-firstboot*`, `pond-setup` | Pi 5 (seeded) · QEMU (both paths) |
-| Display | 2× HDMI 4Kp60, DSI | `vc4` + `vc4-kms-v3d-pi5` overlay | Pi 5 (HDMI 0, 2560×1440@60) |
-| 3D GPU | VideoCore VII: OpenGL ES 3.1 / GL 3.1, Vulkan 1.3 | mesa `v3d` / `vulkan-broadcom` | Pi 5 (V3D 7.1, V3DV Vulkan 1.3) |
-| Desktop | niri, Pond shell (Quickshell), SDDM greeter, launcher | Pond packages rebuilt for aarch64 | Pi 5 |
-| Monitor brightness | DDC/CI over HDMI | `ddcutil`, users in `i2c` | Pi 5 |
-| Wi-Fi | CYW43455 802.11ac | `brcmfmac` + `firmware-raspberrypi` | Pi 5 (WPA2/WPA3 router, preset + manual) |
-| Bluetooth | CYW43455 BT 5.0 | `hci_uart`/`btbcm` + BCM4345C0 | Pi 5 (scan) |
-| Ethernet | Gigabit (RP1 / Cadence GEM) | `macb` | Pi 5 (`end0` up; no cable tested) |
-| USB | 2× USB 3, 2× USB 2 (RP1 xHCI) | `xhci` | Pi 5 (keyboard, 2.4 GHz mouse receiver) |
-| Storage | microSD (SDR104), NVMe via PCIe HAT | `sdhci-brcmstb`, `nvme`, `pcie-brcmstb` | Pi 5 (microSD, 85 MB/s) · NVMe hardware |
-| Audio | HDMI audio; USB/Bluetooth audio | vc4 HDMI, PipeWire, WirePlumber | Pi 5 (HDMI playback) |
-| Video decode | HEVC (hardware block); everything on CPU in practice | `rpi-hevc-dec` (V4L2 stateless) | Pi 5 (device present)* |
-| Camera | CSI cameras (Camera Module 3, HQ…) | `rp1-cfe`, `pisp-be`, libcamera + PipeWire | Pi 5 (PiSP present) · camera hardware |
-| Board | RTC, fan, thermal, watchdog, power button | `rtc-rpi`, `pwm-fan`, `bcm2835-wdt`, `gpio-keys` | Pi 5 |
-| Tools | `vcgencmd`, `pinctrl`, `rpi-eeprom-update` | `raspberrypi-utils`, `rpi5-eeprom` | Pi 5 (EEPROM updated 2025-05 → 2026-09) |
-| Memory | zram swap (zstd, size of RAM) | Pond's `pond-system-optimizations` | Pi 5 |
-| Local network | `<hostname>.local` published; other `.local` names resolve | avahi, nss-mdns, ufw IGMP + mDNS | Pi 5 (`ssh you@pond.local` from macOS) |
-| Firewall | ufw default-deny; SSH opened only when requested | `ufw` on nf_tables | Pi 5 |
-| Updates | `pacman -Syu` against Arch Linux ARM; snapper pre/post snapshots | `archlinuxarm-keyring`, `snap-pac` | Pi 5 |
-| Apps | Flathub (aarch64), AUR via paru, Nix | `flatpak`, `paru`, `nix` | Pi 5 (Flatseal, brave-bin, `nix run nixpkgs#hello`) |
-| Diagnostics | power/USB limit, throttling, bootloader age, GPU, radios | `pond-pi-doctor` | Pi 5 |
+| Component | Provided by | Tested |
+|---|---|---|
+| Boot firmware, kernel 6.18, device trees for Pi 5, Pi 500 and CM5 | `raspberrypi-bootloader`, `linux-rpi` | Pi 5 |
+| btrfs root with Pond's 11 subvolumes | `linux-rpi`, initramfs | Pi 5 |
+| First boot (resize, keyring, presets) | `pond-firstboot`, `pond-setup` | Pi 5; setup screen in QEMU |
+| HDMI output (2 × 4K60) and DSI displays | `vc4` | Pi 5, HDMI 0 at 2560×1440 |
+| GPU with OpenGL ES 3.1 and Vulkan 1.3 | Mesa `v3d`, `vulkan-broadcom` | Pi 5 |
+| Pond's desktop (niri, shell, login screen, launcher) | Pond packages rebuilt for aarch64 | Pi 5 |
+| Monitor brightness over HDMI (DDC/CI) | `ddcutil` | Pi 5 |
+| Wi-Fi (CYW43455, 802.11ac) | `brcmfmac`, `firmware-raspberrypi` | Pi 5, WPA2/WPA3 router |
+| Bluetooth 5.0 | `hci_uart`, `btbcm` | Pi 5, scanning only |
+| Gigabit Ethernet | `macb` | Pi 5, link not tested |
+| USB 3 and USB 2 ports | `xhci` | Pi 5, keyboard and mouse |
+| microSD | `sdhci-brcmstb` | Pi 5, 85 MB/s at SDR104 |
+| NVMe through a PCIe HAT | `nvme`, `pcie-brcmstb` | untested |
+| HDMI audio | `vc4`, PipeWire | Pi 5 |
+| Hardware HEVC decoder | `rpi-hevc-dec` | present but unused, see below |
+| CSI cameras | `rp1-cfe`, `pisp-be`, libcamera | untested |
+| Real-time clock, fan, watchdog, power button | `rtc-rpi`, `pwm-fan`, `bcm2835-wdt`, `gpio-keys` | Pi 5 |
+| Bootloader updates | `rpi5-eeprom` | Pi 5 |
+| `.local` hostname | avahi, nss-mdns | Pi 5, from macOS |
+| Firewall | ufw | Pi 5 |
+| Updates and snapshots | pacman, snapper, `snap-pac` | Pi 5 |
+| Flathub, AUR, Nix | flatpak, paru, nix | Pi 5 |
+| Health report | `pond-pi-doctor` | Pi 5 |
 
-\* Arch's ffmpeg and mpv do not use the Pi 5's stateless HEVC decoder, so video decodes on
-the CPU. Measured on the Pi 5 with synthetic clips: 1080p H.264 277 fps, 1080p HEVC
-159 fps, 4K H.264 72 fps, 4K HEVC 41 fps (30 fps is real time).
+Arch's ffmpeg and mpv don't support the Pi 5's HEVC decoder, so all video is decoded on the
+CPU. That's fast enough for most files. Decoding 1080p H.264 runs at 277 frames per second,
+1080p HEVC at 159, 4K H.264 at 72 and 4K HEVC at 41. These were measured on the Pi 5 with
+ffmpeg's synthetic test pattern, which is easier to decode than real video, so 4K HEVC
+films may stutter.
 
-## Boards
+## Other boards
 
-| Board | Status |
-|---|---|
-| Pi 5 (all RAM sizes), Pi 500, CM5 | target; DTBs and Wi-Fi firmware included |
-| Pi 5 1 GB | runs; the idle desktop uses ~750 MB, so expect zram swapping |
-| Pi 4 / Pi 400 | the same kernel and firmware support them, but untested |
-| Pi 3 and older | not supported (performance) |
+The image includes device trees and Wi-Fi firmware for the Pi 500 and the Compute Module 5,
+but neither has been tried. The Pi 4 and Pi 400 use the same kernel and firmware packages,
+so they will probably boot, but the image isn't built or tested for them. Older Pis are too
+slow for the desktop.
 
-**RAM:** the idle desktop after login uses about 750 MB in total. Pond's shell is about
-200 MB of that and the launcher about 140 MB. With Firefox open, a 4 GB Pi 5 uses about
-1.7 GB. zram adds compressed swap equal to RAM.
+On a 4 GB Pi 5, the desktop uses about 750 MB of RAM after login, and about 1.7 GB with
+Firefox open. A 1 GB Pi 5 will run it, but expect it to swap. Swap is compressed in RAM
+(zram) and is the same size as the RAM.
 
 ## Differences from Pond on a PC
 
-| Pond on PC | Pond on Pi 5 | Why |
-|---|---|---|
-| `linux-pond` (CachyOS) kernel | `linux-rpi` (Raspberry Pi kernel) | Pi 5 hardware support is in the Pi kernel |
-| GRUB with a btrfs snapshot boot menu | Pi firmware boots the kernel directly | no GRUB/UEFI on the Pi. Snapper snapshots still happen on every pacman transaction, but you roll back from a running system, not the boot menu |
-| `chwd` hardware detection | none | the Pi's drivers are fixed and all included |
-| full `linux-firmware` | Broadcom, Realtek, MediaTek, Atheros, TI and misc only | −650 MB of PC GPU and Intel Wi-Fi firmware. `pacman -S linux-firmware-intel` restores it |
-| `pond` repo updates | Arch Linux ARM updates; Pond's own packages update by rebuilding | Butterfly publishes no aarch64 repo. Run `./pond-pi build` again for new Pond releases |
-| optional apps in Pond's repo (Brave, Claude Desktop, Nvidia…) | not from Pond's repo | x86_64-only binaries. Many have ARM builds via Flatpak or the AUR; see below |
-| CachyOS scx scheduler profiles | stock kernel scheduler | sched_ext is not enabled in `linux-rpi` |
-| Sleep (suspend) in the power menu | locks the screen only | the Pi 5 has no suspend-to-RAM; logind reports `CanSuspend=na` |
-| power profiles in the shell | no effect | `power-profiles-daemon` has only its placeholder driver on the Pi |
+* Pond on a PC uses the CachyOS kernel. The Pi uses the Raspberry Pi kernel, because that's
+  where the Pi 5's hardware support is. CachyOS's scheduler profiles aren't available.
+* There's no GRUB, so there's no menu for booting into an older snapshot. The Pi's firmware
+  starts the kernel directly. Snapshots are still taken on every update.
+* Pond's hardware detection (`chwd`) isn't installed, because the Pi's drivers are all
+  included in the image.
+* Firmware for PC graphics cards and Intel Wi-Fi is left out, which saves about 650 MB. To
+  add it back, run `pacman -S linux-firmware-intel`.
+* Butterfly doesn't publish ARM packages. Pond's own packages update when you rebuild the
+  image with `./pond-pi build`, and everything else updates from Arch Linux ARM.
+* The optional apps in Pond's own repository (Brave, Claude Desktop and others) are x86_64
+  builds. Many of them have ARM versions on Flathub or in the AUR.
+* Sleep in the power menu locks the screen and does nothing else. The Pi 5 can't suspend.
+* The power profile switch in the shell has no effect, because the Pi has no power profile
+  driver.
 
-## Which apps from Pond's catalogue install
+## Apps
 
-Pond's launcher and `pm` offer 4,006 apps (3,165 Flathub, 807 pacman, 34 AUR). Checked
-against Flathub's aarch64 list, Arch Linux ARM's repositories and each AUR package's
-`arch=` (October 2026), **3,439 (86%) install on a Pi 5**. Popular ones that work: Firefox,
-Google Chrome, Brave, VLC, Telegram, Prism Launcher, RetroArch, Claude Code.
+Pond's launcher and its `pm` tool offer 4,006 apps: 3,165 from Flathub, 807 from Arch
+repositories and 34 from the AUR. Each was checked against Flathub's aarch64 list, the
+Arch Linux ARM repositories and the `arch` field of its AUR package in October 2026, and
+3,439 of them (86%) can be installed on a Pi 5. Firefox, Chrome, Brave, VLC, Telegram,
+Prism Launcher, RetroArch and Claude Code are among them.
 
-The rest have no Linux ARM build, and the launcher only shows a red "!" when they fail:
-Discord, Spotify, Steam, Bottles, Heroic, Sober, Minecraft, OBS Studio (Flathub), Obsidian,
-Zed, 1Password, Bitwarden (desktop), Zoom, Microsoft Edge, Thunderbird (Flathub), Wine,
-VirtualBox. Web versions (Discord, Spotify, Obsidian Sync, Zoom) work in Firefox or Chrome.
+The rest have no Linux ARM build. They include Discord, Spotify, Steam, Bottles, Heroic,
+Sober, Minecraft, OBS Studio, Obsidian, Zed, 1Password, Bitwarden, Zoom, Microsoft Edge,
+Thunderbird from Flathub, Wine and VirtualBox. When you try to install one, the launcher
+shows a red mark and doesn't say why. Discord, Spotify and Zoom work in a browser.

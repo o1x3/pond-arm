@@ -1,6 +1,9 @@
 # Flashing and first boot
 
-## Flash with `pond-pi flash` (macOS)
+There are three ways to get the image onto a card. All of them can preset the card with
+your account, SSH key and Wi-Fi, so the Pi is usable without a keyboard or screen.
+
+## Using `pond-pi flash` (macOS)
 
 ```sh
 ./pond-pi flash out/pond-pi5-*.img.xz -- \
@@ -8,61 +11,88 @@
     --wifi-ssid "Home" --wifi-country GB --timezone Europe/London --keyboard gb
 ```
 
-This writes the card, reads it back to check it against the build's checksum, then presets
-it. You are prompted for your password and the Wi-Fi password, so neither lands in your
-shell history. `flash` only lists external and removable disks, refuses internal ones, and
-asks you to type the disk name again before it erases anything.
+`flash` lists the external and removable disks it found and refuses anything else. Before
+it erases a card, it asks you to type the disk name again. After writing, it reads the card
+back and compares it against the checksum from the build.
 
-macOS mounts the card's boot partition (an EFI System partition, which the Pi 5 boots from)
-only as root when it is on a physical card reader, so `flash` asks for your Mac password.
+Everything after `--` is passed to `pond-pi customize`, described below. You'll be asked for
+your Mac password, because macOS only lets root mount the card's boot partition.
 
-## Raspberry Pi Imager
+## Using Raspberry Pi Imager
 
-Run `rpi-imager --repo out/pond-pi5.rpi-imager-manifest`, or double-click the manifest. Pick
-*Raspberry Pi 5*, then *Pond*, and use *Edit settings* as usual (hostname, user, SSH keys,
-Wi-Fi, locale). Imager writes the same cloud-init files that `pond-pi customize` does.
-
-## Any other tool
-
-Flash the `.img.xz` with dd, Etcher or similar. Then either preset it with
-`./pond-pi customize disk4 --user you …` (macOS; the disk number from `diskutil list`), or
-let the first boot ask.
-
-## Customize options
-
-```
-./pond-pi customize TARGET [--hostname H] [--user U] [--password-hash HASH]
-    [--ssh] [--ssh-key FILE]... [--ssh-password-auth]
-    [--wifi-ssid SSID [--wifi-password P | --wifi-open] [--wifi-hidden] [--wifi-country CC]]
-    [--timezone Area/City] [--locale ll_CC.UTF-8] [--keyboard xkb-layout]
+```sh
+rpi-imager --repo out/pond-pi5.rpi-imager-manifest
 ```
 
-`TARGET` is a raw `.img`, a mounted boot partition, or (macOS) a flashed card as `diskN`.
-The tool writes `user-data`, `network-config` and `meta-data` to the FAT partition
-(cloud-init NoCloud, the format Raspberry Pi Imager uses).
+Choose Raspberry Pi 5, then Pond, and fill in Imager's settings as you would for Raspberry
+Pi OS. Imager writes the same files that `pond-pi customize` does, and the Pi applies them
+the same way.
 
-- The account password is stored only as a SHA-512 crypt hash.
-- The Wi-Fi password is stored as given. On a real Pi 5 against a WPA2/WPA3 router, a
-  profile holding the derived WPA2 key failed to connect while the same profile holding the
-  passphrase connected. The NetworkManager copy on the Pi is readable by root only.
-- The Pi deletes all three files after applying them on first boot.
-- The seed is data only: `runcmd`, `bootcmd` and `write_files` are ignored, and every value
-  is validated before it is applied.
+## Using another tool
 
-## First boot
+Write the `.img.xz` with dd, balenaEtcher or anything else that handles compressed images.
+To preset the card afterwards on macOS, run `./pond-pi customize diskN` with the disk
+number from `diskutil list`. If you skip this, the Pi asks for an account on its first
+boot.
 
-1. **The disk grows to fill the card.** The root partition and btrfs are resized and the
-   backup GPT is moved to the end of the card.
-2. **A fresh pacman keyring is generated.** The image ships without one, so no two Pis share
-   keys. SSH host keys and the machine-id are also generated per device.
-3. **Settings are applied** from the boot partition, if present: hostname, user (added to
-   `wheel` for sudo and `i2c` for monitor brightness), SSH keys, Wi-Fi, country, timezone,
-   locale and keyboard. When SSH is requested, sshd is enabled and port 22 is opened in
-   Pond's firewall (ufw denies inbound by default). With keys, SSH password login is
-   disabled. Root login is always disabled.
-4. **No user was preset?** A setup screen on the TV asks for a username, password and
-   computer name, and offers Wi-Fi setup through `nmtui`.
-5. **The Pond login screen appears.**
+## Preset options
 
-The Pi announces itself as `<hostname>.local` (avahi), so `ssh you@pond.local` works from
-macOS, Linux and Windows without looking up its IP address.
+`pond-pi customize TARGET [options]` writes the settings to the card's boot partition.
+`TARGET` can be a disk on macOS (`disk4`), a mounted boot partition, or an uncompressed
+`.img` file. Give at least one of the options below.
+
+* `--hostname NAME` (default: `pond`)
+
+  The computer's name. The Pi announces itself on the local network as `NAME.local`.
+
+* `--user NAME` and `--password-hash HASH`
+
+  Creates an account with sudo rights. You're prompted for the password unless you pass a
+  crypt hash, such as one from `openssl passwd -6`. Only the hash is written to the card.
+
+* `--ssh`, `--ssh-key FILE`, `--ssh-password-auth`
+
+  `--ssh` turns on the SSH server and opens port 22 in the firewall. `--ssh-key` implies
+  `--ssh` and can be repeated. With a key, password logins over SSH are disabled unless you
+  also pass `--ssh-password-auth`. Root can never log in over SSH.
+
+* `--wifi-ssid NAME`, `--wifi-password PASS`, `--wifi-open`, `--wifi-hidden`
+
+  The Wi-Fi network to join. You're prompted for the password if you leave it out, which
+  keeps it out of your shell history. Use `--wifi-open` for networks without a password.
+
+* `--wifi-country CODE`
+
+  The two-letter country code, for example `GB`, `US` or `IN`. The Pi only uses the
+  channels allowed in its country, and without a country it may not find some 5 GHz
+  networks.
+
+* `--timezone ZONE`, `--locale LOCALE`, `--keyboard LAYOUT` (defaults: `UTC`,
+  `en_US.UTF-8`, `us`)
+
+  For example `Europe/London`, `en_GB.UTF-8` and `gb`.
+
+The settings are written as cloud-init files (`user-data`, `network-config` and
+`meta-data`), the same format Raspberry Pi Imager uses. The Pi reads them as data only.
+Commands in them (`runcmd`, `bootcmd`, `write_files`) are ignored, and a value that fails
+validation is logged and skipped.
+
+The Wi-Fi password is stored on the card in plain text. On a Pi 5 with a WPA2/WPA3 router,
+a profile holding the derived WPA2 key failed to connect, and the same profile holding the
+password connected. The card copy is deleted on first boot, and the copy on the Pi can only
+be read by root.
+
+## What happens on first boot
+
+1. The root partition grows to fill the card.
+2. A new pacman keyring, new SSH host keys and a new machine ID are generated, so no two
+   Pis share them.
+3. The preset settings are applied, and then deleted from the card. The account is added to
+   the `wheel` group for sudo and to `i2c`, which lets the desktop control monitor
+   brightness.
+4. If no account was preset, a setup screen asks for a username, a password and a computer
+   name, and offers to connect to Wi-Fi.
+5. The login screen appears.
+
+The first boot takes about 20 seconds longer than later ones, most of it spent generating
+the pacman keyring.
